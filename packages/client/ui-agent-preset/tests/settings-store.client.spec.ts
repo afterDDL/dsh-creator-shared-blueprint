@@ -5,7 +5,7 @@
  * as a failure.
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController, messageOf,
@@ -240,7 +240,13 @@ describe('the new-session chip controller', () => {
   function chip(
     presets: { id: string; trust: 'system' | 'user'; isDefault: boolean }[],
     current: { id: string; blank: boolean; agentPreset?: string } | undefined,
-    options: { writes?: Recorded[]; failSelect?: string; failList?: string; throwOn?: 'list' | 'select' } = {},
+    options: {
+      writes?: Recorded[]
+      failSelect?: string
+      failList?: string
+      throwOn?: 'list' | 'select'
+      readiness?: Array<{ sessionId: string; state: 'pending' | 'ready' | 'failed' }>
+    } = {},
   ): AgentPresetSeatController {
     const api = {
       agentPresets: {
@@ -259,7 +265,12 @@ describe('the new-session chip controller', () => {
         },
       },
     } as unknown as IApiClient
-    return new AgentPresetSeatController(api, () => current as SeatSessionSummary | undefined)
+    return new AgentPresetSeatController(
+      api,
+      () => current as SeatSessionSummary | undefined,
+      undefined,
+      (sessionId, state) => { options.readiness?.push({ sessionId, state }) },
+    )
   }
 
   const ROSTER: { id: string; trust: 'system' | 'user'; isDefault: boolean }[] = [
@@ -336,6 +347,39 @@ describe('the new-session chip controller', () => {
     expect(controller.store.getSnapshot().current).toBe('minimal')
   })
 
+  it('publishes pending before the switch and ready only after the Host commit', async () => {
+    const readiness: Array<{ sessionId: string; state: 'pending' | 'ready' | 'failed' }> = []
+    const select = Promise.withResolvers<{
+      rpcId: string
+      result: { ok: true; value: { agentPreset: string } }
+    }>()
+    const selectRequest = vi.fn(() => select.promise)
+    const api = {
+      agentPresets: {
+        select: selectRequest,
+      },
+    } as unknown as IApiClient
+    const controller = new AgentPresetSeatController(
+      api,
+      () => ({ id: 's1' as never, blank: true, agentPreset: 'standard' }),
+      undefined,
+      (sessionId, state) => { readiness.push({ sessionId, state }) },
+    )
+    controller.stage('minimal')
+
+    const first = controller.apply()
+    const duplicate = controller.apply()
+    expect(readiness).toEqual([{ sessionId: 's1', state: 'pending' }])
+    expect(selectRequest).toHaveBeenCalledOnce()
+
+    select.resolve({ rpcId: 'r', result: { ok: true, value: { agentPreset: 'minimal' } } })
+    await Promise.all([first, duplicate])
+    expect(readiness).toEqual([
+      { sessionId: 's1', state: 'pending' },
+      { sessionId: 's1', state: 'ready' },
+    ])
+  })
+
   it('spends the stage exactly once', async () => {
     const writes: Recorded[] = []
     const controller = chip(ROSTER, { id: 's1', blank: true, agentPreset: 'standard' }, { writes })
@@ -372,8 +416,12 @@ describe('the new-session chip controller', () => {
   })
 
   it('falls back to the default when the host refuses the switch', async () => {
+    const readiness: Array<{ sessionId: string; state: 'pending' | 'ready' | 'failed' }> = []
     const controller = chip(
-      ROSTER, { id: 's1', blank: true, agentPreset: 'standard' }, { failSelect: 'already started' })
+      ROSTER,
+      { id: 's1', blank: true, agentPreset: 'standard' },
+      { failSelect: 'already started', readiness },
+    )
     await controller.load()
 
     await controller.select('minimal')
@@ -381,6 +429,39 @@ describe('the new-session chip controller', () => {
     // Showing `minimal` after a refusal would claim a composition the session
     // never got.
     expect(controller.store.getSnapshot()).toMatchObject({ current: 'standard', error: 'already started' })
+    expect(readiness).toEqual([
+      { sessionId: 's1', state: 'pending' },
+      { sessionId: 's1', state: 'failed' },
+    ])
+  })
+
+  it('does not unblock a Session when the Host echoes another preset identity', async () => {
+    const readiness: Array<{ sessionId: string; state: 'pending' | 'ready' | 'failed' }> = []
+    const api = {
+      agentPresets: {
+        select: () => Promise.resolve({
+          rpcId: 'r', result: { ok: true as const, value: { agentPreset: 'standard' } },
+        }),
+      },
+    } as unknown as IApiClient
+    const controller = new AgentPresetSeatController(
+      api,
+      () => ({ id: 's1' as never, blank: true, agentPreset: 'standard' }),
+      undefined,
+      (sessionId, state) => { readiness.push({ sessionId, state }) },
+    )
+    controller.stage('minimal')
+
+    await controller.apply()
+
+    expect(controller.store.getSnapshot()).toMatchObject({
+      current: '',
+      error: 'Agent preset mismatch: expected "minimal", received "standard"',
+    })
+    expect(readiness).toEqual([
+      { sessionId: 's1', state: 'pending' },
+      { sessionId: 's1', state: 'failed' },
+    ])
   })
 
   it('falls back to the default when the switch never reaches the host', async () => {

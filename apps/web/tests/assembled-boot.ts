@@ -47,13 +47,39 @@ const PLUGINS: readonly (WebBootEntry & { bundlePath: string })[] = [
   { id: '@deepseek-ai/dsh-client-ui-trajectory', bundlePath: 'packages/client/ui-trajectory/lib/client.js', url: '/plugins/ui-trajectory.js', rev: 'fx', inject: ['@deepseek-ai/dsh-client-ui-conversation'] },
 ]
 
-const bundles = new Map(PLUGINS.map(plugin => [
+const BLUEPRINT_DEMO_PLUGIN: WebBootEntry & { bundlePath: string } = {
+  id: '@deepseek-ai/dsh-client-ui-blueprint',
+  bundlePath: 'packages/client/ui-blueprint/lib/client.js',
+  url: '/plugins/ui-blueprint.js',
+  rev: 'fx',
+  inject: [
+    '@deepseek-ai/dsh-api-remotes',
+    '@deepseek-ai/dsh-client-connection',
+    '@deepseek-ai/dsh-client-runtime',
+    '@deepseek-ai/dsh-client-ui-layout',
+    '@deepseek-ai/dsh-client-ui-sidebar',
+    '@deepseek-ai/dsh-client-ui-conversation',
+    '@deepseek-ai/dsh-client-ui-tool',
+    '@deepseek-ai/dsh-client-ui-agent-preset',
+  ],
+}
+
+const BLUEPRINT_PRESET_PLUGIN: WebBootEntry & { bundlePath: string } = {
+  id: '@deepseek-ai/dsh-client-ui-agent-preset',
+  bundlePath: 'packages/client/ui-agent-preset/lib/client.js',
+  url: '/plugins/ui-agent-preset.js',
+  rev: 'fx',
+  inject: ['@deepseek-ai/dsh-client-ui-layout', '@deepseek-ai/dsh-client-locale', '@deepseek-ai/dsh-client-connection', '@deepseek-ai/dsh-api-remotes'],
+}
+
+const bundles = new Map([...PLUGINS, BLUEPRINT_PRESET_PLUGIN, BLUEPRINT_DEMO_PLUGIN].map(plugin => [
   plugin.url,
   readFileSync(join(process.cwd(), plugin.bundlePath), 'utf8'),
 ]))
 
 interface FixtureWindow extends Window {
   __DSH_BOOT__?: { rev: string; entries: WebBootEntry[] }
+  __DSH_BLUEPRINT_DEMO__?: object
   __ModuleLoader__?: unknown
 }
 
@@ -94,6 +120,7 @@ export function installAssembledBootEnv(): void {
     unmount = undefined
     cleanup()
     delete win.__DSH_BOOT__
+    delete win.__DSH_BLUEPRINT_DEMO__
     delete win.__ModuleLoader__
     document.body.innerHTML = ''
     document.head.querySelectorAll('style[data-plugin]').forEach((style) => { style.remove() })
@@ -111,13 +138,17 @@ export function installAssembledBootEnv(): void {
 /**
  * Mount the assembled application on the fixture transport; the teardown
  * registered by installAssembledBootEnv disposes it.
+ * @param options - optional production-slot Blueprint Demo bootstrap.
  */
-export function mountAssembledApp(): void {
-  history.replaceState(null, '', '/?fixture')
+export function mountAssembledApp(options: { blueprintDemo?: object } = {}): void {
+  const blueprintDemo = options.blueprintDemo
+  history.replaceState(null, '', blueprintDemo === undefined ? '/?fixture' : '/?fixture&blueprintDemo')
   const root = document.createElement('div')
   root.id = 'root'
   document.body.appendChild(root)
-  win.__DSH_BOOT__ = { rev: 'fx', entries: PLUGINS.map(({ bundlePath: _bundlePath, ...plugin }) => plugin) }
+  const plugins = blueprintDemo === undefined ? PLUGINS : [...PLUGINS, BLUEPRINT_PRESET_PLUGIN, BLUEPRINT_DEMO_PLUGIN]
+  if (blueprintDemo !== undefined) win.__DSH_BLUEPRINT_DEMO__ = blueprintDemo
+  win.__DSH_BOOT__ = { rev: 'fx', entries: plugins.map(({ bundlePath: _bundlePath, ...plugin }) => plugin) }
   act(() => {
     const entry = new AppWebEntry(root, {
       loadBundle: async (url) => {

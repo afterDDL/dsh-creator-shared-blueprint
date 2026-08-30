@@ -1088,9 +1088,13 @@ describe('dsh-tool-subagent continuable background mode', () => {
       { agent: parent },
     )
     expect(started.isError).toBe(false)
-    const match = /^started subagent (\S+)$/.exec(text(started))
+    const expectedPrefix = 'started continuable subagent '
+    const expectedSuffix = '\nThe subagent id is not a background job id and cannot be used with job_* tools. '
+      + 'Its result arrives in the runtime settlement notice.'
+    const match = /^started continuable subagent (\S+)/.exec(text(started))
     expect(match).not.toBeNull()
     const [, childId] = match!
+    expect(text(started)).toBe(`${expectedPrefix}${childId}${expectedSuffix}`)
     // No Task was created for the continuable child.
     expect(ctx.jobs.list(parent)).toEqual([])
 

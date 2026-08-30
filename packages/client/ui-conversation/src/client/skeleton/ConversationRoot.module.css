@@ -28,7 +28,9 @@
 .header {
   position: relative;
   flex: none;
-  padding: 12px 28px 0 20px;
+  min-height: 64px;
+  padding: 16px 20px;
+  box-sizing: border-box;
   border-bottom: 1px solid transparent;
 }
 
@@ -108,7 +110,10 @@
 }
 
 .crumbCurrent {
+  padding-inline: 0;
+  font-size: 16px;
   font-weight: 500;
+  line-height: 24px;
   color: var(--dsw-alias-label-primary);
   cursor: default;
 }

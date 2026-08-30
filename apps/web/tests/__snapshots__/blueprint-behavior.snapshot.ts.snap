@@ -1,0 +1,15 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`renders the real RC rule source collapsed and expanded in the runnable Blueprint Web example 1`] = `
+{
+  "collapsed": "规则展开开始研究前，先与用户确认研究对象（公司名称/证券代码）和报告基准日…读取用户提供的本地资料，并搜索公开信息交叉核验。另有 3 条规则",
+  "expanded": [
+    "开始研究前，先与用户确认研究对象（公司名称/证券代码）和报告基准日期；信息不足时先提问，不擅自假定。",
+    "读取用户提供的本地资料，并搜索公开信息交叉核验。",
+    "所有数据必须标注来源与数据口径（报告期、币种、单位、指标计算方式），并区分事实与推断。",
+    "缺失信息明确标注为「缺失」，绝不编造数据或来源。",
+    "不提供任何买卖建议。",
+  ],
+  "readOnly": true,
+}
+`;

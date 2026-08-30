@@ -1,0 +1,68 @@
+[
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "blueprint-cancel-proposal",
+        "name": "propose_blueprint_change",
+        "argumentsDelta": "{\"intent\":\"modify-existing-agent\",\"changes\":[{\"target_node_id\":\"purpose:persona\",\"operation\":\"updatePurpose\",\"current_value\":\"Compare public product capabilities and pricing.\",\"proposed_value\":\"Compare products from uploaded data only.\",\"impact\":\"Limits the comparison to user-provided data.\"}]}"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "blueprint-cancel-proposal",
+          "name": "propose_blueprint_change",
+          "arguments": "{\"intent\":\"modify-existing-agent\",\"changes\":[{\"target_node_id\":\"purpose:persona\",\"operation\":\"updatePurpose\",\"current_value\":\"Compare public product capabilities and pricing.\",\"proposed_value\":\"Compare products from uploaded data only.\",\"impact\":\"Limits the comparison to user-provided data.\"}]}"
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  },
+  {
+    "kind": "chunks",
+    "chunks": [
+      {
+        "type": "block-start",
+        "index": 0,
+        "blockType": "tool-call"
+      },
+      {
+        "type": "tool-call-delta",
+        "index": 0,
+        "id": "blueprint-apply-proposal",
+        "name": "propose_blueprint_change",
+        "argumentsDelta": "{\"intent\":\"modify-existing-agent\",\"changes\":[{\"target_node_id\":\"purpose:persona\",\"operation\":\"updatePurpose\",\"current_value\":\"Compare public product capabilities and pricing.\",\"proposed_value\":\"Compare public product capabilities, pricing, and adoption signals.\",\"impact\":\"Extends the comparison to adoption evidence.\"}]}"
+      },
+      {
+        "type": "block-end",
+        "index": 0,
+        "block": {
+          "type": "tool-call",
+          "id": "blueprint-apply-proposal",
+          "name": "propose_blueprint_change",
+          "arguments": "{\"intent\":\"modify-existing-agent\",\"changes\":[{\"target_node_id\":\"purpose:persona\",\"operation\":\"updatePurpose\",\"current_value\":\"Compare public product capabilities and pricing.\",\"proposed_value\":\"Compare public product capabilities, pricing, and adoption signals.\",\"impact\":\"Extends the comparison to adoption evidence.\"}]}"
+        }
+      },
+      {
+        "type": "finish",
+        "reason": {
+          "kind": "tool-calls"
+        }
+      }
+    ]
+  }
+]

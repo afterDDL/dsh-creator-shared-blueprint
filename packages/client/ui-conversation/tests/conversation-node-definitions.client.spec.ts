@@ -17,13 +17,43 @@ import { turnErrorDefinition } from '../src/client/conversation-nodes/turn-error
 import { turnMaxTokensDefinition } from '../src/client/conversation-nodes/turn-max-tokens.ts'
 import { turnTailDefinition } from '../src/client/conversation-nodes/turn-tail.ts'
 import type {
-  AssistantChatData, ManualCompactionChatData, RetryChatData, ToolChatData, TurnTailChatData,
+  AssistantChatData, InternalTurnPresentationData, ManualCompactionChatData, RetryChatData,
+  ToolChatData, TurnTailChatData,
 } from '../src/client/contract/chat-nodes.ts'
+
+const IMPLEMENTATION_MARKER_PLUGIN = 'test-implementation-turn-presentation'
+
+const implementationTurnPresentationDefinition: ConversationNodeDefinition<number> = {
+  kind: 'test-implementation-turn-presentation',
+  target: 'chat',
+  match: (event) => {
+    if (event.type !== 'user/message' || event.data.source.kind !== 'plugin'
+      || event.data.source.plugin !== IMPLEMENTATION_MARKER_PLUGIN) return null
+    return { id: String(event.data.id), role: 'start' }
+  },
+  start: (_context, match) => match.event.seq,
+  update: context => context.state,
+  buildViewNode: (context) => {
+    if (context.state === undefined) return null
+    const data: InternalTurnPresentationData = { internalTurnPresentation: 'implementation-only' }
+    return {
+      key: context.key,
+      kind: 'test-implementation-turn-presentation',
+      id: context.id,
+      target: 'chat',
+      anchorSeq: context.state,
+      location: context.start?.location ?? { kind: 'unresolved' },
+      visibility: 'hidden',
+      data,
+    }
+  },
+}
 
 const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   nextTurnInboxDefinition,
   nextStepInboxDefinition,
   messageDefinition,
+  implementationTurnPresentationDefinition,
   assistantDefinition,
   toolDefinition,
   commandDefinition,
@@ -94,6 +124,20 @@ function textMessage(id: string, text: string) {
   }
 }
 
+function internalContextMessage(id: string, text: string) {
+  return {
+    ...textMessage(id, text),
+    source: { kind: 'plugin', plugin: 'blueprint-adapter', presentation: 'internal' },
+  }
+}
+
+function implementationMarkerMessage(id: string) {
+  return {
+    ...textMessage(id, 'private Creator authoring context'),
+    source: { kind: 'plugin', plugin: IMPLEMENTATION_MARKER_PLUGIN },
+  }
+}
+
 function assistantMessage(id: string, text: string) {
   return {
     id,
@@ -115,6 +159,13 @@ function toolResult(callId: string, text: string) {
       isError: false,
     }],
   }
+}
+
+function turnNodes(value: ChatSnapshot, turn: number): readonly ChatConversationViewNode[] {
+  return value.nodes.values().filter((candidate) => {
+    const location = candidate.location
+    return (location.kind === 'turn' || location.kind === 'step') && location.turn.turn === turn
+  })
 }
 
 describe('built-in conversation node Definitions', () => {
@@ -512,6 +563,333 @@ describe('built-in conversation node Definitions', () => {
       provenance: { role: 'inject', label: 'demo-skill' },
       form: 'instructions',
     })
+  })
+
+  it('keeps an internal-presentation Turn durable but absent from a replaced Chat snapshot', () => {
+    const entries = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'user/message', internalContextMessage('authoring-input', 'private authoring instructions'), {
+        surfaceOp: 'append',
+      }),
+      at(3, 'step/start', { turn: 1, step: 1 }),
+      at(4, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: assistantMessage('authoring-assistant', 'private candidate analysis'),
+      }, { surfaceOp: 'append' }),
+      at(5, 'tool/call', {
+        turn: 1, step: 1, callId: 'authoring-tool', name: 'preset_candidate', arguments: '{}',
+      }),
+      at(6, 'tool/result', {
+        turn: 1,
+        step: 1,
+        message: toolResult('authoring-tool', 'private candidate result'),
+      }, { surfaceOp: 'append' }),
+      at(7, 'step/end', { turn: 1, step: 1 }),
+      at(8, 'turn/end', {
+        turn: 1,
+        reason: { kind: 'error', error: { code: 'VERIFY', message: 'private repair diagnostic' } },
+      }),
+      at(9, 'turn/start', { turn: 2 }),
+      at(10, 'user/message', textMessage('ordinary-input', 'visible follow-up'), { surfaceOp: 'append' }),
+      at(11, 'step/start', { turn: 2, step: 1 }),
+      at(12, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('ordinary-assistant', 'visible answer'),
+      }, { surfaceOp: 'append' }),
+      at(13, 'step/end', { turn: 2, step: 1 }),
+      at(14, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]
+    const current = snapshot(assembler(entries))
+    const internal = turnNodes(current, 1)
+    const ordinary = turnNodes(current, 2)
+
+    expect(entries[1]?.event.data).toMatchObject({
+      content: [{ type: 'text', text: 'private authoring instructions' }],
+      source: { presentation: 'internal' },
+    })
+    expect(internal.map(candidate => candidate.kind).sort()).toEqual([
+      'assistant-step', 'context', 'tool-call', 'turn-error', 'turn-tail',
+    ])
+    expect(internal.every(candidate => candidate.visibility === 'hidden')).toBe(true)
+    expect(current.locations.getTurn(1)).toEqual([])
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
+      'user', 'assistant-step', 'turn-tail',
+    ])
+    expect(ordinary.every(candidate => candidate.visibility === 'visible')).toBe(true)
+    expect(current.legacy.nodes.map(candidate => candidate.seq)).toEqual([10, 12])
+  })
+
+  it('keeps a truncated internal Turn hidden from its terminal replacement marker', () => {
+    const current = snapshot(assembler([
+      at(4, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: assistantMessage('private-authoring-output', 'private candidate analysis'),
+      }, { surfaceOp: 'append' }),
+      at(5, 'tool/call', {
+        turn: 1, step: 1, callId: 'private-write', name: 'write', arguments: '{}',
+      }),
+      at(6, 'step/end', { turn: 1, step: 1 }),
+      at(7, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(8, 'user/message', internalContextMessage(
+        'capability-terminal',
+        'A prior internal capability-configuration turn is closed.',
+      ), {
+        sourceEventSeqs: [3, 4],
+        surfaceOp: { op: 'replace', start: 3, end: 4 },
+      }),
+      at(9, 'turn/start', { turn: 2 }),
+      at(10, 'user/message', textMessage('ordinary-input', 'visible follow-up'), { surfaceOp: 'append' }),
+      at(11, 'step/start', { turn: 2, step: 1 }),
+      at(12, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('ordinary-assistant', 'visible answer'),
+      }, { surfaceOp: 'append' }),
+      at(13, 'step/end', { turn: 2, step: 1 }),
+      at(14, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ], true))
+
+    expect(turnNodes(current, 1).map(candidate => candidate.kind).sort()).toEqual([
+      'assistant-step', 'context', 'tool-call', 'turn-tail',
+    ])
+    expect(turnNodes(current, 1).every(candidate => candidate.visibility === 'hidden')).toBe(true)
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
+      'user', 'assistant-step', 'turn-tail',
+    ])
+    expect(current.legacy.nodes.map(candidate => candidate.seq)).toEqual([10, 12])
+  })
+
+  it('reprojects an incrementally marked Turn as one batch and restores visibility for the next Turn', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'user/message', textMessage('initial-user', 'initially visible'), { surfaceOp: 'append' }),
+      at(3, 'step/start', { turn: 1, step: 1 }),
+      at(4, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: assistantMessage('initial-assistant', 'initially visible answer'),
+      }, { surfaceOp: 'append' }),
+    ])
+    const before = snapshot(value)
+    expect(turnNodes(before, 1).every(candidate => candidate.visibility === 'visible')).toBe(true)
+
+    for (const entry of [
+      at(5, 'user/message', internalContextMessage('repair-input', 'private repair instructions'), {
+        surfaceOp: 'append',
+      }),
+      at(6, 'tool/call', {
+        turn: 1, step: 1, callId: 'repair-tool', name: 'preset_candidate', arguments: '{}',
+      }),
+      at(7, 'tool/result', {
+        turn: 1,
+        step: 1,
+        message: toolResult('repair-tool', 'private repair result'),
+      }, { surfaceOp: 'append' }),
+      at(8, 'step/end', { turn: 1, step: 1 }),
+      at(9, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ]) value.append(entry)
+    value.flush()
+
+    const internal = snapshot(value)
+    expect(turnNodes(internal, 1).every(candidate => candidate.visibility === 'hidden')).toBe(true)
+    expect(internal.order).toEqual([])
+    expect(internal.legacy.nodes).toEqual([])
+
+    for (const entry of [
+      at(10, 'turn/start', { turn: 2 }),
+      at(11, 'user/message', textMessage('later-user', 'later visible'), { surfaceOp: 'append' }),
+      at(12, 'step/start', { turn: 2, step: 1 }),
+      at(13, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('later-assistant', 'later visible answer'),
+      }, { surfaceOp: 'append' }),
+      at(14, 'step/end', { turn: 2, step: 1 }),
+      at(15, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]) value.append(entry)
+    value.flush()
+
+    const after = snapshot(value)
+    expect(turnNodes(after, 1).every(candidate => candidate.visibility === 'hidden')).toBe(true)
+    expect(turnNodes(after, 2).every(candidate => candidate.visibility === 'visible')).toBe(true)
+    expect(after.order.map(key => after.nodes.get(key)?.kind)).toEqual([
+      'user', 'assistant-step', 'turn-tail',
+    ])
+    expect(after.legacy.nodes.map(candidate => candidate.seq)).toEqual([11, 13])
+  })
+
+  it('retains human input while suppressing Creator implementation rows after a full replacement', () => {
+    const steering = textMessage('creator-steering', 'keep the output concise')
+    const entries = [
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'user/message', textMessage('creator-request', 'create a research Agent'), { surfaceOp: 'append' }),
+      at(3, 'step/start', { turn: 1, step: 1 }),
+      at(4, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: assistantMessage('creator-analysis', 'private preset analysis'),
+      }, { surfaceOp: 'append' }),
+      at(5, 'agent/inbox/spliced', {
+        target: 'next-step',
+        start: 0,
+        inserted: [steering],
+      }),
+      at(6, 'agent/inbox/spliced', {
+        target: 'next-step',
+        start: 0,
+        removedCount: 1,
+        inserted: [],
+      }),
+      at(7, 'user/message', steering, { surfaceOp: 'append' }),
+      at(8, 'user/message', implementationMarkerMessage('creator-context'), { surfaceOp: 'append' }),
+      at(9, 'tool/call', {
+        turn: 1, step: 1, callId: 'creator-tool', name: 'preset_validate', arguments: '{}',
+      }),
+      at(10, 'tool/result', {
+        turn: 1,
+        step: 1,
+        message: toolResult('creator-tool', 'private mount result'),
+      }, { surfaceOp: 'append' }),
+      at(11, 'llm/retry', {
+        retryId: 'creator-retry',
+        turn: 1,
+        step: 1,
+        provider: 'fake',
+        mode: 'normal',
+        policyKey: 'fake-normal',
+        retry: 1,
+        maxRetries: 1,
+        delayMs: 10,
+        failure: { code: 'TRANSPORT', message: 'private retry diagnostic' },
+      }),
+      at(12, 'step/end', { turn: 1, step: 1 }),
+      at(13, 'turn/end', {
+        turn: 1,
+        reason: { kind: 'error', error: { code: 'AUTHORING', message: 'private Creator error' } },
+      }),
+      at(14, 'turn/start', { turn: 2 }),
+      at(15, 'user/message', textMessage('ordinary-input-after-creator', 'visible follow-up'), {
+        surfaceOp: 'append',
+      }),
+      at(16, 'step/start', { turn: 2, step: 1 }),
+      at(17, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('ordinary-answer-after-creator', 'visible answer'),
+      }, { surfaceOp: 'append' }),
+      at(18, 'step/end', { turn: 2, step: 1 }),
+      at(19, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]
+
+    const assertProjection = (current: ChatSnapshot): void => {
+      const creator = turnNodes(current, 1)
+      const ordinary = turnNodes(current, 2)
+      expect(creator.filter(candidate => candidate.visibility === 'visible').map(candidate => candidate.kind))
+        .toEqual(['user', 'steering'])
+      expect(creator.filter(candidate => candidate.kind !== 'user' && candidate.kind !== 'steering')
+        .every(candidate => candidate.visibility === 'hidden')).toBe(true)
+      expect(current.locations.getTurn(1).map(key => current.nodes.get(key)?.kind)).toEqual(['user', 'steering'])
+      expect(ordinary.every(candidate => candidate.visibility === 'visible')).toBe(true)
+      expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
+        'user', 'steering', 'user', 'assistant-step', 'turn-tail',
+      ])
+      expect(current.legacy.nodes.map(candidate => candidate.seq)).toEqual([2, 7, 15, 17])
+    }
+
+    assertProjection(snapshot(assembler(entries)))
+    assertProjection(snapshot(assembler(entries)))
+  })
+
+  it('reprojects earlier implementation rows when the Creator marker arrives incrementally', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'user/message', textMessage('creator-request-live', 'create a laptop Agent'), {
+        surfaceOp: 'append',
+      }),
+      at(3, 'step/start', { turn: 1, step: 1 }),
+      at(4, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: assistantMessage('creator-analysis-live', 'private analysis before context arrives'),
+      }, { surfaceOp: 'append' }),
+      at(5, 'tool/call', {
+        turn: 1, step: 1, callId: 'creator-tool-live', name: 'preset_copy', arguments: '{}',
+      }),
+      at(6, 'tool/result', {
+        turn: 1,
+        step: 1,
+        message: toolResult('creator-tool-live', 'private copy result'),
+      }, { surfaceOp: 'append' }),
+    ])
+    expect(turnNodes(snapshot(value), 1).every(candidate => candidate.visibility === 'visible')).toBe(true)
+
+    for (const entry of [
+      at(7, 'user/message', implementationMarkerMessage('creator-context-live'), { surfaceOp: 'append' }),
+      at(8, 'step/end', { turn: 1, step: 1 }),
+      at(9, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ]) value.append(entry)
+    value.flush()
+
+    const creator = snapshot(value)
+    expect(turnNodes(creator, 1).filter(candidate => candidate.visibility === 'visible').map(candidate => candidate.kind))
+      .toEqual(['user'])
+    expect(creator.order.map(key => creator.nodes.get(key)?.kind)).toEqual(['user'])
+    expect(creator.legacy.nodes.map(candidate => candidate.seq)).toEqual([2])
+
+    for (const entry of [
+      at(10, 'turn/start', { turn: 2 }),
+      at(11, 'user/message', textMessage('ordinary-input-live', 'what changed?'), { surfaceOp: 'append' }),
+      at(12, 'step/start', { turn: 2, step: 1 }),
+      at(13, 'assistant/message', {
+        turn: 2,
+        step: 1,
+        message: assistantMessage('ordinary-answer-live', 'visible explanation'),
+      }, { surfaceOp: 'append' }),
+      at(14, 'step/end', { turn: 2, step: 1 }),
+      at(15, 'turn/end', { turn: 2, reason: { kind: 'completed' } }),
+    ]) value.append(entry)
+    value.flush()
+
+    const after = snapshot(value)
+    expect(turnNodes(after, 2).every(candidate => candidate.visibility === 'visible')).toBe(true)
+    expect(after.order.map(key => after.nodes.get(key)?.kind)).toEqual([
+      'user', 'user', 'assistant-step', 'turn-tail',
+    ])
+    expect(after.legacy.nodes.map(candidate => candidate.seq)).toEqual([2, 11, 13])
+  })
+
+  it('does not promote an independently hidden Assistant into a Turn-level suppression marker', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'user/message', textMessage('visible-user', 'visible request'), { surfaceOp: 'append' }),
+      at(3, 'step/start', { turn: 1, step: 1 }),
+      at(4, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: {
+          ...assistantMessage('tool-only-assistant', ''),
+          content: [{ type: 'tool-call', id: 'visible-tool', name: 'read', arguments: '{}' }],
+        },
+      }, { surfaceOp: 'append' }),
+      at(5, 'tool/call', { turn: 1, step: 1, callId: 'visible-tool', name: 'read', arguments: '{}' }),
+      at(6, 'tool/result', {
+        turn: 1,
+        step: 1,
+        message: toolResult('visible-tool', 'visible tool result'),
+      }, { surfaceOp: 'append' }),
+      at(7, 'step/end', { turn: 1, step: 1 }),
+      at(8, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ])
+    const current = snapshot(value)
+
+    expect(node(current, 'assistant-step')?.visibility).toBe('hidden')
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual(['user', 'tool-call', 'turn-tail'])
+    expect(node(current, 'user')?.visibility).toBe('visible')
+    expect(node(current, 'tool-call')?.visibility).toBe('visible')
+    expect(node(current, 'turn-tail')?.visibility).toBe('visible')
   })
 
   it('keeps replacement copies out of Chat business nodes', () => {

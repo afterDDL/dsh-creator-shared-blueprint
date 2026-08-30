@@ -54,9 +54,10 @@ export function toolChatSnapshot(
  * @returns a direct-test renderSlot implementation.
  */
 export function renderToolDetails(t: TranslateNS<'conversation'>): DetailsSlotProps['renderSlot'] {
-  return (_key, owner) => {
-    // PropsRenderSlots keeps its key generic even for this one-key share;
-    // recover the concrete owner selected by the adapter's fixed slot.
+  return (key, owner) => {
+    if (key === 'conversation.details.default') return <div data-testid="details-default" />
+    // The default branch is ownerless; only the fixed Tool branch carries the
+    // concrete details owner hidden behind PropsRenderSlots' generic callback.
     const details = owner as unknown as DetailsToolOwnerProps
     return <ToolDetails block={details.block} cwd={details.cwd} t={t} />
   }

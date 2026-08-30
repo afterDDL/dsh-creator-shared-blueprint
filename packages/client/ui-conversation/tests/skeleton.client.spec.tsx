@@ -9,7 +9,7 @@ import {
   createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ConversationSnapshot, SessionId, SessionListState, WorkspaceId, WorkspaceListState, WorkspaceView,
+  ConversationSnapshot, PendingInteraction, SessionId, SessionListState, WorkspaceId, WorkspaceListState, WorkspaceView,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationRootProps } from '../src/client/skeleton/ConversationRoot.tsx'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
@@ -19,7 +19,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import { createChatStore } from '../src/client/stores.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { en, zh } from '../src/client/locales.ts'
-import { ConversationRoot } from '../src/client/skeleton/ConversationRoot.tsx'
+import { ConversationRoot, composerInteractions } from '../src/client/skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from '../src/client/skeleton/ConversationSession.tsx'
 import { HeroShell } from '../src/client/skeleton/EmptyHero.tsx'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
@@ -59,6 +59,10 @@ const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
 const SID = sid('s1')
 
+function pendingInteraction(owner: string, key: string): PendingInteraction {
+  return { kind: 'question', sessionId: sid(owner), key } as unknown as PendingInteraction
+}
+
 function workspace(id = 'w1'): WorkspaceView {
   return {
     workspaceId: wid(id), path: `/projects/${id}`, title: id, sessionIds: [],
@@ -95,6 +99,8 @@ function mount(
     omitSummaryRow?: boolean
     /** Classify the selected child as a subagent instead of an ordinary fork. */
     summaryOrigin?: 'subagent'
+    /** Host-echoed runtime preset used to derive the composer mode. */
+    agentPreset?: string
     /** A composer block another plugin raised for this session. */
     composerBlock?: { reason: string }
     /** Mutable view ledger used by registration-order regressions. */
@@ -106,6 +112,7 @@ function mount(
   const childRow = {
     id: SID, displayTitle: 'Child', parentId: root, cwd: '/projects/one',
     running: false, blank: options.summaryBlank ?? false, updatedAt: 2,
+    ...(options.agentPreset === undefined ? {} : { agentPreset: options.agentPreset }),
     ...(options.summaryOrigin === undefined ? {} : { origin: options.summaryOrigin }),
   }
   const listed = options.omitSummaryRow !== true
@@ -242,6 +249,7 @@ function mount(
     useWorkspaces: bindSnapshotSelector(workspaces),
     useProjection: (() => undefined),
     useComposerBlock: select => select(options.composerBlock),
+    useComposerInteractions: select => select([]),
     useInput,
     inputActions,
     renderSlot,
@@ -256,6 +264,22 @@ function mount(
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
 }
+
+describe('composerInteractions', () => {
+  it('keeps native waits first and deduplicates only the same Session and key', () => {
+    const nativeCarrier = pendingInteraction('source', 'shared-key')
+    const native = [nativeCarrier]
+    const sameOwnerDuplicate = pendingInteraction('source', 'shared-key')
+    const otherOwnerSameKey = pendingInteraction('child', 'shared-key')
+    const externalUnique = pendingInteraction('child', 'child-only')
+
+    const combined = composerInteractions(native, [sameOwnerDuplicate, otherOwnerSameKey, externalUnique])
+
+    expect(combined).toEqual([nativeCarrier, otherOwnerSameKey, externalUnique])
+    expect(combined[0]).toBe(nativeCarrier)
+    expect(composerInteractions(native, [sameOwnerDuplicate])).toBe(native)
+  })
+})
 
 describe('Hero chrome', () => {
   it('renders the English preview badge through the hero locale seat', () => {
@@ -380,6 +404,19 @@ describe('ConversationRoot resident composer', () => {
     act(() => { owner.onPick(wid('second')) })
     expect(b.retargetWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.getByText('Selected Folder')).toBeTruthy()
+  })
+
+  it('derives the blank-session composer copy from the runtime preset', () => {
+    const ordinary = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }), undefined, undefined, {
+      summaryBlank: true, agentPreset: 'competitive-research',
+    })
+    expect((ordinary.view.getByRole('textbox') as HTMLTextAreaElement).placeholder).toBe('给智能体发消息')
+    ordinary.view.unmount()
+
+    const creator = mount(conversationSnapshot({ composerPhase: 'blank', blank: true }), undefined, undefined, {
+      summaryBlank: true, agentPreset: 'cordis',
+    })
+    expect((creator.view.getByRole('textbox') as HTMLTextAreaElement).placeholder).toBe('描述你想要构建的内容')
   })
 
   it('settling phase: a summary that does not prove the session blank hides the composer while it opens', () => {

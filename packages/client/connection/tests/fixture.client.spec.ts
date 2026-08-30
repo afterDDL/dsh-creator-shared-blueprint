@@ -1092,6 +1092,39 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
     expect(rejected.result).toMatchObject({ ok: false, error: { code: 'agent-busy' } })
   })
 
+  it('starts a Blueprint fixture preview after the unrelated welcome notice', async () => {
+    vi.stubGlobal('location', { search: '?fixture&blueprintDemo' })
+    const client = new FixtureApiClient()
+    const presets = await client.agentPresets.list({})
+    if (!presets.result.ok) throw new Error('preset list failed')
+    expect(presets.result.value.presets).toEqual([
+      { id: 'cordis', trust: 'system', isDefault: true },
+      { id: 'listed-company-research', name: '上市公司研究 Agent', trust: 'user', isDefault: false },
+    ])
+    const creatorSession = await client.sessions.create({ agentPreset: 'cordis' })
+    expect(creatorSession.result).toMatchObject({
+      ok: true,
+      value: { agentPreset: 'cordis' },
+    })
+    if (!creatorSession.result.ok) throw new Error('creator session failed')
+    const creatorHistory = await client.sessions.history({ sessionId: creatorSession.result.value.sessionId })
+    expect(creatorHistory.result).toMatchObject({
+      ok: true,
+      value: {
+        projections: {
+          values: { permissions: { currentValue: 'danger-full-access' } },
+        },
+      },
+    })
+    const settings = await client.settings.describe({})
+    if (!settings.result.ok) throw new Error('settings describe failed')
+    const welcome = settings.result.value.namespaces.find(namespace => namespace.ns === 'ui-onboarding')
+    expect(welcome).toMatchObject({
+      ns: 'ui-onboarding',
+      value: { welcomeNoticeVersion: '2026-08-13.1' },
+    })
+  })
+
   it('maps attach-failure and dropped-response query scenarios', async () => {
     vi.stubGlobal('location', { search: '?fixture&fixtureAttach=fail' })
     const partial = new FixtureApiClient()

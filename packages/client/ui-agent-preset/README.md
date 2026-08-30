@@ -12,7 +12,9 @@ A session's preset is fixed when the session is created — the host refuses to 
 
 A second surface, beside the workspace picker on the new-session screen. It sits there rather than in the composer because that is where the choice is still open: a control that spends most of its life disabled belongs on the screen where it still works.
 
-The chip opens on the deployment default and its pick is *staged* — the screen precedes the session it would apply to. The stage reaches a session when one becomes current and is still blank, which covers both the session the workspace connect created and the blank one it reused; riding along on `sessions.create` would miss the second. It is spent on first use, so the next new session opens on the default again, exactly like the workspace picker beside it.
+The chip opens on the deployment default and its pick is *staged* — the screen precedes the session it would apply to. The stage reaches a session when one becomes current and is still blank, which covers both the session the workspace connect created and the blank one it reused; riding along on `sessions.create` would miss the second. While the Host recomposes that blank session, the seat raises a session-scoped composer block. Both the rendered disabled state and the conversation send path enforce it, and the block clears only after `agentPresets.select` returns the committed preset identity. A failed switch keeps the input blocked with a retryable explanation instead of allowing the first prompt to run on the fallback composition. The stage is spent on first use, so the next new session opens on the default again, exactly like the workspace picker beside it.
+
+`AgentPresetSessionIntent` exposes that same seat-owned staging operation to other Client surfaces. A Creator entry uses it to stage `cordis`; it does not mutate the current Session or claim that a new Session is Creator-owned before the Host echoes the committed preset.
 
 A session that has started is refused rather than queued: the host answers `agent-preset-locked`, and the stage is dropped instead of waiting for a session that will never accept it.
 

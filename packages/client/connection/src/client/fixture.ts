@@ -40,6 +40,10 @@ import type { RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/d
 import { AbstractApiClient, RpcId, SESSION_SEARCH_RESULT_LIMIT } from './api.ts'
 import { randomUuid } from './random-uuid.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
+import {
+  BlueprintDemoSessionPlayer, creatorEventFixtures, creatorInteractionFixtures, toolStep,
+} from './blueprint-demo-events.ts'
+import type { SessionEventFixture } from './blueprint-demo-events.ts'
 
 /** The fake carrier mints like a real one (business code never mints). */
 function rpcRequest<P>(payload: P): RpcRequest<P> {
@@ -1430,6 +1434,10 @@ interface ReasoningChunkStormState {
 export interface FixtureOptions {
   /** Start with no real Workspace or Session. */
   empty?: boolean
+  /** Serve the scripted Interactive Blueprint product walkthrough. */
+  blueprintDemo?: boolean
+  /** Start after the versioned welcome notice in a focused product-surface preview. */
+  welcomeAcknowledged?: boolean
   /** Reject every prompt before appending its user event. */
   rejectPrompt?: boolean
   /** Publish the Session but fail its Workspace account write. */
@@ -1438,6 +1446,16 @@ export interface FixtureOptions {
   dropSessionCreateResponse?: boolean
   /** Order of the two successful create frames. */
   createFrameOrder?: 'session-first' | 'workspace-first'
+}
+
+/** Browser-local control surface shared with the scripted Blueprint UI only. */
+export interface BlueprintDemoFixtureBridge {
+  completePurpose(sessionId: string): void
+  setCapabilities(value: { csvSkill: boolean; industrySubagent: boolean }): void
+}
+
+declare global {
+  var __dshBlueprintDemoFixture: BlueprintDemoFixtureBridge | undefined
 }
 
 /** Inbox pump shared by both stream generators (FrameQueue pattern: ONE abort listener hung
@@ -1540,9 +1558,16 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   const fixturePresets = new Map<string, { trust: 'system' | 'user'; content: string }>([
     ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n" }],
     ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n" }],
+    ['cordis', { trust: 'system', content: "- id: preset-authoring\n  name: '@deepseek-ai/dsh-preset-authoring'\n" }],
     ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n" }],
   ])
-  let fixtureDefaultPreset = 'standard'
+  if (options.blueprintDemo === true) {
+    fixturePresets.set('listed-company-research', {
+      trust: 'user',
+      content: "- id: company-research\n  name: '@deepseek-ai/dsh-preset-company-research'\n",
+    })
+  }
+  let fixtureDefaultPreset = options.blueprintDemo === true ? 'cordis' : 'standard'
   const nextTurn = new Map<SessionId, number>([[sid('fx-alpha'), 75]])
   let nextSession = 1
   let nextRpc = 1
@@ -1600,6 +1625,15 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   const pendingApprovalId = 'fx-approval-1' as Extract<MuxFrame, { type: 'approval/requested' }>['approvalId']
   /** Cleared once answered through respond; replay stops and approval/resolved is broadcast. */
   let approvalPending = true
+  interface DemoApproval {
+    rpcId: ReturnType<typeof RpcId>
+    approvalId: Extract<MuxFrame, { type: 'approval/requested' }>['approvalId']
+    sessionId: SessionId
+    toolName: string
+    reason: string
+    resolve: (allowed: boolean) => void
+  }
+  const demoApprovals = new Map<string, DemoApproval>()
   const pendingQuestionRpcId = mint()
   let questionPending = true
   const fixtureQuestions: Extract<MuxFrame, { type: 'question/requested' }>['questions'] = [
@@ -2176,6 +2210,163 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     replays.set(id, { timer: setTimeout(tick, 80), finish })
   }
 
+  let demoCapabilities = { csvSkill: false, industrySubagent: false }
+  const demoPlayer = new BlueprintDemoSessionPlayer((sessionId, event) => {
+    append(sessionId, event)
+  })
+  const appendDemoEvent = (id: SessionId, event: SessionEventFixture): void => {
+    append(id, event)
+  }
+  const demoAssistant = (id: SessionId, turn: number, step: number, body: ContentBlock[]): void => {
+    appendDemoEvent(id, creatorEventFixtures.stepStart(turn, step))
+    appendDemoEvent(id, creatorEventFixtures.assistant(turn, step, body))
+  }
+  const demoTool = (
+    id: SessionId,
+    turn: number,
+    step: number,
+    name: string,
+    args: Record<string, unknown>,
+    result: string,
+    meta?: unknown,
+  ): void => {
+    for (const item of toolStep(0, turn, step, name, args, result, meta)) appendDemoEvent(id, item.event)
+  }
+  const demoFinish = (id: SessionId, turn: number, step: number, body: string): void => {
+    demoAssistant(id, turn, step, text(body))
+    appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, step))
+    appendDemoEvent(id, creatorEventFixtures.turnEnd(turn, { kind: 'completed' }))
+    setRunning(id, false)
+  }
+  const requestDemoApproval = (
+    id: SessionId,
+    turn: number,
+    step: number,
+    toolName: string,
+    args: Record<string, unknown>,
+    reason: string,
+    resolve: (allowed: boolean) => void,
+  ): void => {
+    const callId = `blueprint-${String(turn)}-${String(step)}-${toolName}`
+    demoAssistant(id, turn, step, [{ type: 'tool-call', id: callId, name: toolName, arguments: JSON.stringify(args) } as ContentBlock])
+    appendDemoEvent(id, creatorEventFixtures.toolCall(turn, step, callId, toolName, args))
+    const rpcId = mint()
+    const approvalId = `blueprint-approval-${String(turn)}-${String(step)}` as DemoApproval['approvalId']
+    const approval: DemoApproval = { rpcId, approvalId, sessionId: id, toolName, reason, resolve }
+    demoApprovals.set(String(rpcId), approval)
+    for (const conn of muxConns) {
+      conn.push({ rpcId, payload: creatorInteractionFixtures.approvalRequested(id, approvalId, toolName, reason) })
+    }
+  }
+  const settleApprovedTool = (
+    approval: DemoApproval,
+    turn: number,
+    step: number,
+    result: string,
+    allowed: boolean,
+  ): void => {
+    const callId = `blueprint-${String(turn)}-${String(step)}-${approval.toolName}`
+    appendDemoEvent(approval.sessionId, creatorEventFixtures.toolResult(
+      turn, step, callId, allowed ? result : '用户拒绝了本次写入。', { isError: !allowed },
+    ))
+    appendDemoEvent(approval.sessionId, creatorEventFixtures.stepEnd(turn, step))
+  }
+
+  const startBlueprintCreator = (id: SessionId, turn: number): void => {
+    demoAssistant(id, turn, 0, [{ type: 'reasoning', text: '先把需求拆成角色、研究目标、资料能力、工作规则与输出结构，再创建独立 preset。' }])
+    appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
+    demoPlayer.schedule(1_500, () => { demoTool(id, turn, 1, 'read', { file_path: 'examples/agent-presets/company-research/README.md' }, '已读取 Agent preset 结构与字段说明。') })
+    demoPlayer.schedule(3_000, () => { demoTool(id, turn, 2, 'ask_user_question', { questions: [{ id: 'preset-strategy', question: '如何处理这个 Agent preset？', options: [{ label: '创建全新独立 preset', description: '为上市公司研究创建新的独立预设。' }] }] }, JSON.stringify({ answers: [{ id: 'preset-strategy', selected: ['创建全新独立 preset'] }] })) })
+    demoPlayer.schedule(4_800, () => { demoTool(id, turn, 3, 'pwsh', { command: 'Get-ChildItem .agent-presets' }, 'cordis\nstandard\nminimal') })
+    demoPlayer.schedule(6_500, () => { demoTool(id, turn, 4, 'cordis_define', { type: 'agent-preset', id: 'listed-company-research' }, '已定义 preset 组成。') })
+    demoPlayer.schedule(8_200, () => { demoTool(id, turn, 5, 'preset_copy', { source: 'standard', id: 'listed-company-research' }, '已复制为 listed-company-research。') })
+    demoPlayer.schedule(10_300, () => { demoTool(id, turn, 6, 'write', { file_path: '.agent-presets/listed-company-research/cordis.yml', content: 'purpose, behaviors, outputs' }, '已写入角色、目标、规则与输出结构。') })
+    demoPlayer.schedule(12_400, () => { demoTool(id, turn, 7, 'preset_validate', { id: 'listed-company-research' }, '验证通过。') })
+    demoPlayer.schedule(14_000, () => { demoFinish(id, turn, 8, '上市公司研究 Agent 已创建完成。你可以在右侧继续调整目标、添加专用 Skill 或协作 Agent，也可以直接试用。') })
+  }
+
+  const startBlueprintPurpose = (id: SessionId, turn: number): void => {
+    demoAssistant(id, turn, 0, text('明白。我会把“不提供投资建议”设为明确边界，并同步检查规则和输出，避免只修改一句目标后留下冲突。'))
+    appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
+    demoPlayer.schedule(1_600, () => {
+      const changeSetId = `blueprint-${String(turn)}-1-propose_blueprint_change`
+      const purposeChangeSet = {
+        sourceSessionId: id,
+        routeId: `blueprint-purpose-${String(turn)}`,
+        changeSetId,
+        kind: 'direct-edit-reconciliation',
+        presetId: 'listed-company-research', revision: 'demo-r1', sourceNodeId: 'purpose:persona', sourceNodeType: 'purpose', sourceLabel: '做什么',
+        proposals: [
+          { proposalId: 'demo-purpose-1', presetId: 'listed-company-research', revision: 'demo-r1', targetNodeId: 'purpose:persona', operation: 'updatePurpose', currentValue: '研究上市公司的业务、财务表现、估值与行业竞争，并基于公开资料和用户提供的财报形成结构化研究报告。', proposedValue: '研究上市公司的业务、财务表现、估值与行业竞争；仅提供公司研究和估值分析，不提供投资建议。', impact: '明确研究边界，排除投资建议。' },
+          { proposalId: 'demo-purpose-2', presetId: 'listed-company-research', revision: 'demo-r1', targetNodeId: 'behavior:3', operation: 'updateBehavior', currentValue: '区分事实、推断和结论，重要判断给出来源。', proposedValue: '区分事实、推断和结论，重要判断给出来源；不得给出买入、卖出或持有建议。', impact: '把边界落实到执行规则。', dependency: '依赖新目标的“不提供投资建议”约束。' },
+          { proposalId: 'demo-purpose-3', presetId: 'listed-company-research', revision: 'demo-r1', targetNodeId: 'output:1', operation: 'updateOutput', currentValue: '输出包含公司概览、业务分析、财务分析、估值分析、行业竞争与风险因素的结构化研究报告。', proposedValue: '输出包含公司概览、业务分析、财务分析、估值分析、行业竞争、风险因素与免责声明的结构化研究报告。', impact: '在报告中增加明确免责声明。', dependency: '与新目标和行为规则保持一致。' },
+        ],
+      }
+      demoTool(id, turn, 1, 'propose_blueprint_change', { presetId: 'listed-company-research' }, '已生成 3 项关联调整。', { blueprintChangeSet: purposeChangeSet })
+    })
+    demoPlayer.schedule(2_000, () => {
+      appendDemoEvent(id, creatorEventFixtures.turnEnd(turn, { kind: 'completed' }))
+      setRunning(id, false)
+    })
+  }
+
+  const startBlueprintSkill = (id: SessionId, turn: number): void => {
+    demoAssistant(id, turn, 0, [{ type: 'reasoning', text: '这个需求适合沉淀为可复用 Skill：固定 CSV 字段映射、指标口径、缺失值提示与结构化输出。' }])
+    appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
+    demoPlayer.schedule(2_000, () => { demoTool(id, turn, 1, 'read', { file_path: '.agents/skills/skill-creator/SKILL.md' }, '已读取 Skill 创建规范。') })
+    demoPlayer.schedule(4_200, () => { demoTool(id, turn, 2, 'pwsh', { command: 'Get-ChildItem .agent-presets/listed-company-research' }, 'cordis.yml') })
+    demoPlayer.schedule(6_500, () => { demoTool(id, turn, 3, 'cordis_define', { type: 'skill', name: 'csv-financial-metrics' }, '已生成 Skill 定义草稿。') })
+    demoPlayer.schedule(9_000, () => {
+      requestDemoApproval(id, turn, 4, 'write', { file_path: '.agent-presets/listed-company-research/skills/csv-financial-metrics/SKILL.md' }, '需要写入新的 CSV 财务指标提取 Skill。', (allowed) => {
+        const approval = [...demoApprovals.values()].find(candidate => candidate.sessionId === id && candidate.approvalId === `blueprint-approval-${String(turn)}-4`)
+        if (approval === undefined) return
+        settleApprovedTool(approval, turn, 4, '已写入 Skill 文件。', allowed)
+        if (!allowed) { demoFinish(id, turn, 5, '已取消创建 CSV 财务指标提取 Skill。'); return }
+        demoPlayer.schedule(2_300, () => { demoTool(id, turn, 5, 'preset_validate', { id: 'listed-company-research' }, 'Skill 已挂载，preset 验证通过。') })
+        demoPlayer.schedule(4_500, () => { demoFinish(id, turn, 6, 'CSV 财务指标提取 Skill 已创建并挂载到上市公司研究 Agent。') })
+      })
+    })
+  }
+
+  const startBlueprintSubagent = (id: SessionId, turn: number): void => {
+    demoAssistant(id, turn, 0, [{ type: 'reasoning', text: '行业研究是边界清晰的独立任务，适合交给一次性协作 Agent，再由主 Agent 汇总。' }])
+    appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
+    demoPlayer.schedule(2_200, () => { demoTool(id, turn, 1, 'read', { file_path: '.agent-presets/listed-company-research/cordis.yml' }, '已读取当前 preset composition。') })
+    demoPlayer.schedule(5_000, () => { demoTool(id, turn, 2, 'cordis_define', { type: 'subagent', name: 'industry-competition-researcher' }, '已定义协作 Agent 的责任和工具范围。') })
+    demoPlayer.schedule(8_000, () => { demoTool(id, turn, 3, 'preset_copy', { source: 'minimal', id: 'industry-competition-researcher' }, '已创建协作 Agent preset。') })
+    demoPlayer.schedule(11_000, () => {
+      requestDemoApproval(id, turn, 4, 'write', { file_path: '.agent-presets/listed-company-research/cordis.yml' }, '需要把行业研究协作 Agent 挂载到当前 Agent。', (allowed) => {
+        const approval = [...demoApprovals.values()].find(candidate => candidate.sessionId === id && candidate.approvalId === `blueprint-approval-${String(turn)}-4`)
+        if (approval === undefined) return
+        settleApprovedTool(approval, turn, 4, '已写入 delegation composition row。', allowed)
+        if (!allowed) { demoFinish(id, turn, 5, '已取消添加行业研究协作 Agent。'); return }
+        demoPlayer.schedule(2_800, () => { demoTool(id, turn, 5, 'preset_validate', { id: 'listed-company-research' }, '协作 Agent 与 delegation provider 均可用。') })
+        demoPlayer.schedule(5_500, () => { demoFinish(id, turn, 6, '行业研究协作 Agent 已挂载。主 Agent 可在研究任务中按需委派。') })
+      })
+    })
+  }
+
+  const startBlueprintTest = (id: SessionId, turn: number): void => {
+    demoAssistant(id, turn, 0, [{ type: 'reasoning', text: '先检索公开资料并读取财务数据，再按当前 Blueprint 的研究边界形成简短报告。' }])
+    appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
+    demoPlayer.schedule(1_500, () => { demoTool(id, turn, 1, 'web_search', { query: 'NVIDIA latest annual report business segments revenue public sources' }, '找到 NVIDIA 年报与投资者关系公开资料。') })
+    demoPlayer.schedule(3_000, () => { demoTool(id, turn, 2, 'read', { file_path: 'uploads/NVIDIA-annual-report.pdf' }, '已读取用户提供的 NVIDIA 财报摘录。') })
+    if (demoCapabilities.csvSkill) demoPlayer.schedule(4_800, () => { demoTool(id, turn, 3, 'csv_financial_metrics', { source: 'NVIDIA financial table' }, '已提取营收、净利润、PE 与 PB 指标。') })
+    if (demoCapabilities.industrySubagent) demoPlayer.schedule(6_500, () => { demoTool(id, turn, 4, 'delegate_industry_research', { company: 'NVIDIA' }, '行业研究协作 Agent 已返回竞争格局摘要。') })
+    demoPlayer.schedule(9_000, () => { demoFinish(id, turn, 5, '## NVIDIA 简要研究\n\n- **业务**：核心增长由数据中心与加速计算需求驱动，业务集中度较高。\n- **财务**：公开财报显示营收与利润快速增长，但需关注周期性、供给约束与客户集中。\n- **行业竞争**：竞争来自专用加速器、云厂商自研芯片及其他 GPU 供应商。\n- **估值观察**：可结合增长持续性、利润率与资本开支周期进行情景分析。\n\n以上仅用于公司研究和估值分析，不构成任何投资建议。') })
+  }
+
+  globalThis.__dshBlueprintDemoFixture = options.blueprintDemo === true ? {
+    completePurpose(sessionId) {
+      const id = sid(sessionId)
+      const turn = nextTurn.get(id) ?? 0
+      nextTurn.set(id, turn + 1)
+      append(id, { type: 'turn/start', data: { turn } })
+      demoFinish(id, turn, 0, '已应用这 3 项修改。目标、执行规则和报告输出现在都明确排除了投资建议。')
+    },
+    setCapabilities(value) { demoCapabilities = { ...value } },
+  } : undefined
+
   const api: ApiProxy = {
     sessions: {
       list: request => ok(request, { items: [...sessions].sort((a, b) => b.updatedAt - a.updatedAt) }),
@@ -2265,9 +2456,18 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         }
         const created: SessionSummary = {
           sessionId: requestedId ?? sid(`fx-${nextSession++}`), updatedAt: Date.now(), running: false, blank: true, cwd,
+          ...(request.payload.agentPreset === undefined ? {} : { agentPreset: request.payload.agentPreset }),
         }
         sessions.push(created)
         modelSelections.set(created.sessionId, { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
+        if (options.blueprintDemo === true) {
+          const time = Date.now()
+          logs.set(created.sessionId, [
+            { seq: 0, time, type: 'permission/preset', data: { preset: 'danger-full-access' } },
+            { seq: 1, time, type: 'sandbox/mode', data: { mode: 'danger-full-access' } },
+            { seq: 2, time, type: 'approval/policy', data: { policy: 'never' } },
+          ] as unknown as SessionEvent[])
+        }
         attachedSessions += 1
         const emitSession = (): void => {
           // Mirrors the host: the frame fires at creation, so blank is constantly true.
@@ -2285,7 +2485,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           if (workspace !== undefined) attachWorkspace(created.sessionId)
         }
         if (options.dropSessionCreateResponse) throw new Error('fixture: dropped session.create response after publication')
-        return ok(request, { sessionId: created.sessionId })
+        return ok(request, {
+          sessionId: created.sessionId,
+          ...(created.agentPreset === undefined ? {} : { agentPreset: created.agentPreset }),
+        })
       },
       rename: (request) => {
         const missing = requireSession(request)
@@ -2455,7 +2658,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             data: { provider: selection.provider, model: selection.model, contextWindow: 128_000 },
           })
         }
-        startReply(
+        if (options.blueprintDemo === true) {
+          if (/不要给投资建议/u.test(userText)) startBlueprintPurpose(id, turn)
+          else if (/CSV|财务指标提取/iu.test(userText)) startBlueprintSkill(id, turn)
+          else if (/协作 Agent|行业竞争分析协作者|让它负责行业研究|市场规模.*主要玩家.*竞争格局/u.test(userText)) startBlueprintSubagent(id, turn)
+          else if (/NVIDIA|英伟达/iu.test(userText)) startBlueprintTest(id, turn)
+          else startBlueprintCreator(id, turn)
+        } else startReply(
           id,
           turn,
           userText === 'render markdown'
@@ -2699,15 +2908,20 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       // Both trusts appear, because a surface must present a locally authored
       // preset differently from one the deployment vetted.
       list: request => ok(request, {
-        presets: [...fixturePresets].map(([id, preset]) => ({
-          id,
-          trust: preset.trust,
-          isDefault: id === fixtureDefaultPreset,
-        })),
+        presets: [...fixturePresets]
+          .filter(([id]) => options.blueprintDemo !== true || id === 'cordis' || id === 'listed-company-research')
+          .map(([id, preset]) => ({
+            id,
+            trust: preset.trust,
+            isDefault: id === fixtureDefaultPreset,
+            ...(id === 'listed-company-research' ? { name: '上市公司研究 Agent' } : {}),
+          })),
         authorable: true,
         hasDocument: true,
       }),
       select: (request) => {
+        const session = summaryOf(request.payload.sessionId)
+        if (session !== undefined) session.agentPreset = request.payload.agentPreset
         fixtureDefaultPreset = request.payload.agentPreset
         return ok(request, { agentPreset: request.payload.agentPreset })
       },
@@ -2856,6 +3070,15 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             },
           })
         }
+        for (const approval of demoApprovals.values()) {
+          conn.push({
+            rpcId: approval.rpcId,
+            payload: {
+              type: 'approval/requested', sessionId: approval.sessionId,
+              approvalId: approval.approvalId, toolName: approval.toolName, reason: approval.reason,
+            },
+          })
+        }
         if (questionPending) {
           conn.push({
             rpcId: pendingQuestionRpcId,
@@ -2899,14 +3122,28 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       describe: request => ok(request, {
         writable: true,
         hasDocument: true,
-        namespaces: [{
-          ns: 'llm-deepseek',
-          schema: {},
-          value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
-          applies: 'live',
-          secrets: [{ path: ['apiKey'], set: false }],
-          revision: 0,
-        }],
+        namespaces: [
+          {
+            ns: 'llm-deepseek',
+            schema: {},
+            value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
+            applies: 'live',
+            secrets: [{ path: ['apiKey'], set: false }],
+            revision: 0,
+          },
+          ...options.welcomeAcknowledged === true
+            ? [{
+              // Mirrored from ui-settings-models/onboarding-copy.ts. A version
+              // change deliberately reopens the real notice in this preview.
+              ns: 'ui-onboarding',
+              schema: {},
+              value: { welcomeNoticeVersion: '2026-08-13.1' },
+              applies: 'live' as const,
+              secrets: [],
+              revision: 0,
+            }]
+            : [],
+        ],
       }),
       // Native opens are deterministic no-op successes in this fixture, as is host.openPath.
       openDocument: request => ok(request, { opened: true as const }),
@@ -2965,6 +3202,21 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     respond(message: ClientResponse): Promise<RpcReceipt> {
       // Same routing discipline as the host: rpcId first, then the payload's
       // audit correlation; a settled or unknown id is not-pending.
+      const demoApproval = demoApprovals.get(String(message.rpcId))
+      if (demoApproval !== undefined) {
+        if (!message.result.ok) return Promise.resolve({ accepted: false, reason: 'bad-response' })
+        const value = message.result.value as { approvalId?: unknown; outcome?: unknown }
+        if (value.approvalId !== demoApproval.approvalId
+          || (value.outcome !== 'allowed-once' && value.outcome !== 'rejected')) {
+          return Promise.resolve({ accepted: false, reason: 'bad-response' })
+        }
+        emitMux(creatorInteractionFixtures.approvalResolved(
+          demoApproval.sessionId, demoApproval.approvalId, value.outcome,
+        ))
+        demoApproval.resolve(value.outcome === 'allowed-once')
+        demoApprovals.delete(String(message.rpcId))
+        return Promise.resolve({ accepted: true })
+      }
       if (message.rpcId === pendingApprovalRpcId) {
         if (!approvalPending) return Promise.resolve({ accepted: false, reason: 'not-pending' })
         if (!message.result.ok) return Promise.resolve({ accepted: false, reason: 'bad-response' })
@@ -3180,6 +3432,8 @@ function fixtureOptionsFromLocation(): FixtureOptions {
   const query = new URLSearchParams(location.search)
   return {
     empty: query.get('fixture') === 'empty',
+    blueprintDemo: query.has('blueprintDemo'),
+    welcomeAcknowledged: query.has('blueprintDemo'),
     rejectPrompt: query.get('fixturePrompt') === 'reject',
     failWorkspaceAttach: query.get('fixtureAttach') === 'fail',
     dropSessionCreateResponse: query.get('fixtureSessionCreate') === 'drop-response',

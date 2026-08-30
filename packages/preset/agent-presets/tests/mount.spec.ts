@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -14,6 +14,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AgentPresets, {
   COMPOSITION_FILE, leakedServices, livePresetMounts, mountPreset, PresetMountError, serviceForAgent,
+  UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
 import type { Config } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
@@ -687,6 +688,113 @@ describe('editing a composition file', () => {
     expect(service.standing.get(preset.id)).toBe(newerPromise)
   })
 
+  it('starts a fresh generation on explicit refresh when the composition stamp is unchanged', async () => {
+    const { scoped, path } = await editable('directory-refreshed')
+    const first = await agentOn(scoped, 'sess-directory-before', 'directory-refreshed')
+    const firstMount = livePresetMounts().find(mount => mount.presetId === 'directory-refreshed')
+    const before = await stat(path)
+
+    scoped.agentPresets.refreshStanding('directory-refreshed')
+    const second = await agentOn(scoped, 'sess-directory-after', 'directory-refreshed')
+
+    const after = await stat(path)
+    const generations = livePresetMounts().filter(mount => mount.presetId === 'directory-refreshed')
+    expect({ mtimeMs: after.mtimeMs, size: after.size })
+      .toEqual({ mtimeMs: before.mtimeMs, size: before.size })
+    expect(generations).toHaveLength(2)
+    expect(generations.some(mount => mount.fiber !== firstMount?.fiber)).toBe(true)
+    expect(toolNames(scoped, first)).toEqual(['before'])
+    expect(toolNames(scoped, second)).toEqual(['before'])
+  })
+
+  it('hides the two-rename publication gap from formal readers without blocking another id', async () => {
+    const { scoped, path } = await editable('publication-guarded')
+    const root = dirname(dirname(path))
+    const target = dirname(path)
+    const baseline = join(root, '.publication-baseline')
+    const replacement = join(root, '.publication-candidate')
+    await mkdir(replacement)
+    await writeFile(join(replacement, COMPOSITION_FILE), rowFor('after'))
+    await mkdir(join(root, 'other'))
+    await writeFile(join(root, 'other', COMPOSITION_FILE), rowFor('other'))
+    const original = await agentOn(scoped, 'sess-publication-original', 'publication-guarded')
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+
+    const publication = scoped.agentPresets.runPublication('publication-guarded', async () => {
+      await rename(target, baseline)
+      entered.resolve(undefined)
+      await release.promise
+      await rename(replacement, target)
+      scoped.agentPresets.refreshStanding('publication-guarded')
+    })
+    await entered.promise
+
+    const operations = [
+      scoped.agentPresets.resolve('publication-guarded'),
+      scoped.agentPresets.read('publication-guarded'),
+      scoped.agentPresets.list(),
+      scoped.agentPresets.standingKeyFor('publication-guarded'),
+      agentOn(scoped, 'sess-publication-reader', 'publication-guarded'),
+      scoped.agentPresets.copy('publication-guarded', 'publication-copy'),
+    ] as const
+    const settled = operations.map(() => false)
+    const tracked = operations.map(async (operation, index) => {
+      try {
+        return await operation
+      } finally {
+        settled[index] = true
+      }
+    })
+    await Promise.resolve()
+
+    expect(settled).toEqual([false, false, false, false, false, false])
+    expect(await scoped.agentPresets.read('other')).toContain('tool: other')
+
+    release.resolve(undefined)
+    await publication
+    const [resolved, composition, listed, standing, mounted] = await Promise.all(tracked)
+
+    expect(resolved).toMatchObject({ id: 'publication-guarded' })
+    expect(composition).toContain('tool: after')
+    expect(listed).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'publication-guarded' })]))
+    expect(standing).toEqual({ agentPreset: 'publication-guarded' })
+    expect(toolNames(scoped, mounted)).toEqual(['after'])
+    expect(await scoped.agentPresets.read('publication-copy')).toContain('tool: after')
+    expect(toolNames(scoped, original)).toEqual(['before'])
+  })
+
+  it('delays removal until an in-flight publication restores the formal path', async () => {
+    const { scoped, path } = await editable('publication-removed')
+    const root = dirname(dirname(path))
+    const target = dirname(path)
+    const baseline = join(root, '.removal-baseline')
+    const replacement = join(root, '.removal-candidate')
+    await mkdir(replacement)
+    await writeFile(join(replacement, COMPOSITION_FILE), rowFor('after'))
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    const publication = scoped.agentPresets.runPublication('publication-removed', async () => {
+      await rename(target, baseline)
+      entered.resolve(undefined)
+      await release.promise
+      await rename(replacement, target)
+    })
+    await entered.promise
+
+    let removed = false
+    const removal = scoped.agentPresets.remove('publication-removed').finally(() => {
+      removed = true
+    })
+    await Promise.resolve()
+    expect(removed).toBe(false)
+
+    release.resolve(undefined)
+    await Promise.all([publication, removal])
+
+    await expect(scoped.agentPresets.resolve('publication-removed')).rejects.toThrow(UnknownPresetError)
+  })
+
   it('hands a host reader the standing key without starting an agent', async () => {
     const { scoped } = await editable('cold-read')
 
@@ -732,5 +840,92 @@ describe('editing a composition file', () => {
     await racer.ensureStanding({ id: 'stale', trust: 'user', path })
 
     expect(livePresetMounts().filter(mount => mount.presetId === 'stale')).toHaveLength(1)
+  })
+})
+
+describe('route-scoped authoring candidates', () => {
+  /** Write one candidate composition outside every committed roster root. */
+  async function candidate(tool: string): Promise<{ preset: Awaited<ReturnType<typeof ctx.agentPresets.resolve>>; path: string }> {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-preset-candidate-'))
+    const dir = join(root, 'standard')
+    await mkdir(dir)
+    const path = join(dir, COMPOSITION_FILE)
+    await writeFile(
+      path,
+      `- id: only\n  name: ${join(FIXTURES, 'plugins', 'contribute.js')}\n  config:\n    tool: ${tool}\n`,
+    )
+    return { preset: { ...await ctx.agentPresets.resolve('standard'), path }, path }
+  }
+
+  it('overlays only its Creator and leaves committed reads unchanged', async () => {
+    const authored = await candidate('candidate')
+    const creator = createScope(ctx, { creator: 'overlay-owner' })
+    const bystander = createScope(ctx, { creator: 'other' })
+    const committedPath = (await ctx.agentPresets.resolve('standard')).path
+    const dispose = ctx.agentPresets.registerAuthoringOverlay(creator.ctx, authored.preset)
+
+    expect((await ctx.agentPresets.resolve('standard')).path).toBe(committedPath)
+    expect((await ctx.agentPresets.resolveFor(creator.ctx, 'standard')).path).toBe(authored.path)
+    expect((await ctx.agentPresets.resolveFor(bystander.ctx, 'standard')).path).toBe(committedPath)
+    expect((await ctx.agentPresets.listFor(creator.ctx)).find(row => row.id === 'standard')?.path)
+      .toBe(authored.path)
+    expect(await ctx.agentPresets.readFor(creator.ctx, 'standard')).toContain('tool: candidate')
+    await expect(ctx.agentPresets.copyFor(creator.ctx, 'standard', 'forbidden'))
+      .rejects.toThrow(/preset_copy is unavailable/)
+
+    await dispose()
+
+    expect((await ctx.agentPresets.resolveFor(creator.ctx, 'standard')).path).toBe(committedPath)
+    await creator.dispose()
+    await bystander.dispose()
+  })
+
+  it('keeps the candidate private across failed validation and a repair', async () => {
+    const authored = await candidate('candidate')
+    const creator = createScope(ctx, { creator: 'repair-owner' })
+    ctx.agentPresets.registerAuthoringOverlay(creator.ctx, authored.preset)
+    await writeFile(authored.path, '- id: missing\n  name: ./does-not-exist.js\n')
+
+    await expect(ctx.agentPresets.validateFor(creator.ctx, 'standard'))
+      .rejects.toThrow(/failed to mount/)
+
+    const committed = await agentOn(ctx, 'sess-committed-during-repair', 'standard')
+    expect(toolNames(ctx, committed)).toEqual(['alpha'])
+    expect((await ctx.agentPresets.resolve('standard')).path).not.toBe(authored.path)
+
+    await writeFile(
+      authored.path,
+      `- id: only\n  name: ${join(FIXTURES, 'plugins', 'contribute.js')}\n  config:\n    tool: repaired\n`,
+    )
+    await expect(ctx.agentPresets.validateFor(creator.ctx, 'standard')).resolves.toBeUndefined()
+    expect((await ctx.agentPresets.resolve('standard')).path).not.toBe(authored.path)
+  })
+
+  it('mounts a verified candidate for one fresh agent without creating a standing generation', async () => {
+    const authored = await candidate('candidate')
+    const verification = await ctx.agents.create({
+      sessionId: SessionId('sess-candidate-verification'),
+      setup: async agentCtx => void await ctx.agentPresets.mountIsolated(agentCtx, authored.preset),
+    })
+
+    expect(toolNames(ctx, verification.agent)).toEqual(['candidate'])
+    expect(ctx.agentPresets.composedPreset(verification.agent.ctx)).toBe('standard')
+
+    const committed = await agentOn(ctx, 'sess-after-candidate-verification', 'standard')
+    expect(toolNames(ctx, committed)).toEqual(['alpha'])
+
+    await verification.dispose()
+    expect(toolNames(ctx, committed)).toEqual(['alpha'])
+  })
+
+  it('rejects duplicate overlays and unscoped registrations', async () => {
+    const authored = await candidate('candidate')
+    const creator = createScope(ctx, { creator: 'single-owner' })
+    ctx.agentPresets.registerAuthoringOverlay(creator.ctx, authored.preset)
+
+    expect(() => ctx.agentPresets.registerAuthoringOverlay(creator.ctx, authored.preset))
+      .toThrow(/already has an authoring candidate/)
+    expect(() => ctx.agentPresets.registerAuthoringOverlay(ctx, authored.preset))
+      .toThrow(/requires a scoped agent context/)
   })
 })

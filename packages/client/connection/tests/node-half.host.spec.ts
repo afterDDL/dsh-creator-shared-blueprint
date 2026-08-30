@@ -177,6 +177,10 @@ describe('connection node half', () => {
       // reconnaissance, and copy/remove/openDocument manage the roster and
       // drive the host desktop.
       'agentPreset.read', 'agentPreset.copy', 'agentPreset.openDocument', 'agentPreset.remove',
+      // Blueprint reads expose the same composition and its runtime assembly;
+      // writes mutate it, and validation exposes a live session assembly.
+      'blueprint/get', 'blueprint/applyChangeSet', 'blueprint/updateIdentity', 'blueprint/updatePurpose', 'blueprint/updateBehavior',
+      'blueprint/setCapability', 'blueprint/setConversationContext', 'blueprint/updateOutput', 'blueprint/validateSession',
     ]) {
       const denied = fakeResponse()
       await routes[0]!.handler(

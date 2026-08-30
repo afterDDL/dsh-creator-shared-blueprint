@@ -151,6 +151,11 @@ function workspacesDouble() {
   }
 }
 
+/** Conversation admission double used by the staged-preset readiness path. */
+function conversationDouble() {
+  return { blocks: { set: vi.fn() } }
+}
+
 /** A sessions double whose list can be moved and whose changes are pushed. */
 function sessionsDouble(state: {
   current?: string
@@ -303,7 +308,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     const conversation = declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
     ctx.provide('workspaces', workspacesDouble() as never)
     const fiber = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply })
@@ -325,7 +330,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots, moveDefault } = await bench()
     declareRoot(slots)
     const conversation = declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
     ctx.provide('workspaces', workspacesDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
@@ -357,7 +362,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     const state = {
       current: 's1',
       byId: { s1: { id: 's1', blank: true, agentPreset: 'standard' } },
@@ -375,7 +380,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     const conversation = declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
     ctx.provide('workspaces', workspacesDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
@@ -405,7 +410,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
     declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     const state: {
       current?: string
       byId: Record<string, { id: string; blank: boolean; agentPreset?: string }>
@@ -434,7 +439,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
     declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     const sessions = sessionsDouble({
       current: 's1',
       byId: { s1: { id: 's1', blank: true } },
@@ -457,7 +462,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
     declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     const state = {
       current: 's1',
       byId: { s1: { id: 's1', blank: true, agentPreset: 'standard' } },
@@ -485,7 +490,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
     ctx.provide('workspaces', workspacesDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
@@ -506,7 +511,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     const conversation = declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     ctx.provide('sessions', sessionsDouble({ byId: {} }) as never)
     const workspaces = workspacesDouble()
     ctx.provide('workspaces', workspaces as never)
@@ -522,6 +527,7 @@ describe('ui-agent-preset apply', () => {
     // new-session flow began.
     expect(section.startCreatorDraft).toBeDefined()
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
+    expect(ctx.agentPresetSessionIntent.pending()).toBe('cordis')
     expect(workspaces.starts).toHaveLength(1)
 
     // A cross-screen stage carries the introduce cue; the chip acknowledges
@@ -539,7 +545,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
     const conversation = declareConversation(slots)
-    ctx.provide('conversation', {} as never)
+    ctx.provide('conversation', conversationDouble() as never)
     const state: {
       current?: string
       byId: Record<string, { id: string; blank: boolean; agentPreset?: string }>

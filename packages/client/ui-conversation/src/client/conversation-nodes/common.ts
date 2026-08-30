@@ -59,6 +59,18 @@ export function chatNode<Kind extends ChatNodeKind>(
 }
 
 /**
+ * Test whether durable source metadata requests internal-only presentation.
+ * @param source - structurally typed message source from the Session log.
+ * @returns whether ordinary Chat must suppress the owning internal Turn.
+ */
+export function hasInternalPresentation(source: unknown): boolean {
+  return typeof source === 'object'
+    && source !== null
+    && 'presentation' in source
+    && source.presentation === 'internal'
+}
+
+/**
  * Read a finite non-negative integer from a structurally narrowed payload.
  * @param value - untrusted payload field.
  * @returns valid coordinate, otherwise undefined.

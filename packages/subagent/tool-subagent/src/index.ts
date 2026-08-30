@@ -361,7 +361,9 @@ export function apply(ctx: Context, config: Config): void {
           text: value.kind === 'background'
             ? `started background subagent job ${value.jobId}`
             : value.kind === 'continuable'
-              ? `started subagent ${value.subagentId}`
+              ? `started continuable subagent ${value.subagentId}\n`
+                + 'The subagent id is not a background job id and cannot be used with job_* tools. '
+                + 'Its result arrives in the runtime settlement notice.'
               : outputValueText(value.output),
         }],
       },

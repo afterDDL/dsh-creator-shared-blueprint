@@ -75,11 +75,13 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
     s => (callId === undefined ? null : materialFor(s, callId)),
     (a, b) => shallowEqual(a, b))
 
+  if (selection === null) return renderSlot('conversation.details.default', {})
+
   return (
     <div className={css.root}>
       <div className={css.header}>
         <div className={css.title}>
-          {selection === null ? t('details.title') : material?.name ?? selection.toolName ?? t('details.title')}
+          {material?.name ?? selection.toolName ?? t('details.title')}
         </div>
         <button
           type="button" className={css.close} aria-label={t('details.close')}
@@ -91,7 +93,7 @@ export function DetailsPanel({ useSession, useSessions, sessionId, useStore, ren
         </button>
       </div>
       <div className={css.body}>
-        {selection === null || callId === undefined
+        {callId === undefined
           ? <div className={css.empty}>{t('details.empty')}</div>
           : material === null
             ? <div className={css.empty}>{t('details.notInWindow')}</div>

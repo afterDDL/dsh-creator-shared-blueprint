@@ -826,6 +826,127 @@ describe('ConversationNodeAssembler', () => {
       .toEqual(['2:3', '2:3'])
   })
 
+  it('backfills a truncated page prefix from the first surviving Turn coordinates', () => {
+    const definition: ConversationNodeDefinition<null> = {
+      kind: 'location-prefix-probe',
+      match: event => (event.type as string) === 'tool/code-dispatch-start'
+        ? { id: String(event.seq), role: 'start' }
+        : null,
+      start: () => null,
+      update: context => context.state,
+      target: 'chat',
+      buildViewNode: (context) => {
+        const location = context.start?.location
+        return node(context, location?.kind === 'step'
+          ? `${location.turn.turn}:${location.step.step}`
+          : location?.kind)
+      },
+    }
+    const assembler = new ConversationNodeAssembler(
+      new TestEventDefinitions([definition]),
+      new TestViewDefinitions([testView()]),
+    )
+    assembler.replaceWindow([
+      input(at(8, 'tool/code-dispatch-start', { rootCallId: 'root', subCallId: 'prefix-a' })),
+      input(at(9, 'tool/code-dispatch-start', { rootCallId: 'root', subCallId: 'prefix-b' })),
+      input(at(17, 'tool/call', { turn: 1, step: 1, callId: 'root', name: 'x', arguments: '{}' })),
+    ], true)
+    assembler.flush()
+
+    expect([...chatSnapshot(assembler)?.nodes.values() ?? []].map(value => value.data))
+      .toEqual(['1:1', '1:1'])
+
+    assembler.prepend([
+      input(at(5, 'turn/start', { turn: 1 })),
+      input(at(7, 'step/start', { turn: 1, step: 1 })),
+    ], false)
+    assembler.flush()
+
+    expect([...chatSnapshot(assembler)?.nodes.values() ?? []].map(value => value.data))
+      .toEqual(['1:1', '1:1'])
+  })
+
+  it('does not backfill a page prefix across a surviving Turn start', () => {
+    const definition: ConversationNodeDefinition<null> = {
+      kind: 'location-prefix-probe',
+      match: event => (event.type as string) === 'tool/code-dispatch-start'
+        ? { id: String(event.seq), role: 'start' }
+        : null,
+      start: () => null,
+      update: context => context.state,
+      target: 'chat',
+      buildViewNode: context => node(context, context.start?.location.kind),
+    }
+    const assembler = new ConversationNodeAssembler(
+      new TestEventDefinitions([definition]),
+      new TestViewDefinitions([testView()]),
+    )
+    assembler.replaceWindow([
+      input(at(1, 'tool/code-dispatch-start', { rootCallId: 'session', subCallId: 'prefix' })),
+      input(at(2, 'turn/start', { turn: 1 })),
+      input(at(3, 'step/start', { turn: 1, step: 1 })),
+    ], true)
+    assembler.flush()
+
+    expect([...chatSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toBe('session')
+  })
+
+  it('bounds truncated prefix backfill at Step and explicit Session scopes', () => {
+    const definition: ConversationNodeDefinition<null> = {
+      kind: 'location-prefix-probe',
+      match: event => (event.type as string) === 'tool/code-dispatch-start'
+        ? { id: String(event.seq), role: 'start' }
+        : null,
+      start: () => null,
+      update: context => context.state,
+      target: 'chat',
+      buildViewNode: (context) => {
+        const location = context.start?.location
+        return node(context, location?.kind === 'step'
+          ? `step:${location.turn.turn}:${location.step.step}`
+          : location?.kind === 'turn' ? `turn:${location.turn.turn}` : location?.kind)
+      },
+    }
+    const create = (
+      entries: readonly ConversationEventInput[],
+      hasMore: boolean,
+    ): readonly unknown[] => {
+      const value = new ConversationNodeAssembler(
+        new TestEventDefinitions([definition]),
+        new TestViewDefinitions([testView()]),
+      )
+      value.replaceWindow(entries, hasMore)
+      value.flush()
+      return [...chatSnapshot(value)?.nodes.values() ?? []].map(candidate => candidate.data)
+    }
+
+    expect(create([
+      input(at(1, 'tool/code-dispatch-start', { rootCallId: 'root', subCallId: 'before-step' })),
+      input(at(2, 'step/start', { turn: 4, step: 2 })),
+    ], true)).toEqual(['turn:4'])
+
+    expect(create([
+      input(at(1, 'tool/code-dispatch-start', { rootCallId: 'root', subCallId: 'complete-window' })),
+      input(at(2, 'tool/call', { turn: 4, step: 2, callId: 'root', name: 'x', arguments: '{}' })),
+    ], false)).toEqual(['session'])
+
+    expect(create([
+      input(at(1, 'tool/code-dispatch-start', {
+        turn: null, rootCallId: 'root', subCallId: 'explicit-session',
+      })),
+      input(at(2, 'tool/call', { turn: 4, step: 2, callId: 'root', name: 'x', arguments: '{}' })),
+    ], true)).toEqual(['session'])
+
+    expect(create([
+      input(at(1, 'tool/code-dispatch-start', { rootCallId: 'root', subCallId: 'late-result-prefix' })),
+      input(at(2, 'tool/result', {
+        turn: 1,
+        step: 1,
+        message: { id: 'late-result', role: 'user', content: [], source: { kind: 'tool', callId: 'root' } },
+      })),
+    ], true)).toEqual(['session'])
+  })
+
   it('treats loaded end boundaries as closed when their starts precede the window', () => {
     const definition: ConversationNodeDefinition<null> = {
       kind: 'location-probe',

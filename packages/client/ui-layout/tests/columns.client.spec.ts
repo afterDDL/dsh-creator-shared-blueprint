@@ -19,7 +19,7 @@ describe('clampWidth', () => {
 describe('computeColumns', () => {
   it('step 1: everything fits at preferred widths', () => {
     const cols = computeColumns(1920, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
-    expect(cols).toEqual({ sidebar: 280, center: 1920 - 280 - 360, details: 360 })
+    expect(cols).toEqual({ sidebar: 240, center: 1920 - 240 - 600, details: 600 })
   })
 
   it('closed sidebar keeps its compact rail while closed details contribute zero width', () => {
@@ -29,34 +29,34 @@ describe('computeColumns', () => {
 
   it('preferences beyond the clamp range are clamped before solving', () => {
     const cols = computeColumns(1920, open(9999), open(1))
-    expect(cols.sidebar).toBe(420)
-    expect(cols.details).toBe(300)
+    expect(cols.sidebar).toBe(360)
+    expect(cols.details).toBe(400)
     expect(computeColumns(1920, open(1), open(DETAILS_DEFAULT)).sidebar).toBe(SIDEBAR_MIN)
   })
 
   it('step 2: details shrinks first, center pinned at min', () => {
-    // 280 + 360 + 640 = 1280 > 1250; details concedes to 1250-280-640 = 330.
+    // 240 + 600 + 600 = 1440 > 1250; details concedes to 1250-240-600 = 410.
     const cols = computeColumns(1250, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
-    expect(cols).toEqual({ sidebar: 280, center: CENTER_MIN, details: 330 })
+    expect(cols).toEqual({ sidebar: 240, center: CENTER_MIN, details: 410 })
   })
 
   it('boundary: exactly at the step-1/step-2 seam', () => {
-    const cols = computeColumns(300 + 360 + CENTER_MIN, open(300), open(360))
-    expect(cols).toEqual({ sidebar: 300, center: CENTER_MIN, details: 360 })
-    const one = computeColumns(300 + 360 + CENTER_MIN - 1, open(300), open(360))
-    expect(one).toEqual({ sidebar: 300, center: CENTER_MIN, details: 359 })
+    const cols = computeColumns(300 + 600 + CENTER_MIN, open(300), open(600))
+    expect(cols).toEqual({ sidebar: 300, center: CENTER_MIN, details: 600 })
+    const one = computeColumns(300 + 600 + CENTER_MIN - 1, open(300), open(600))
+    expect(one).toEqual({ sidebar: 300, center: CENTER_MIN, details: 599 })
   })
 
   it('step 3: details auto-closes when its min still starves center — sidebar holds its preference', () => {
-    // 280 + 300 + 640 = 1220 > 1210 → details 0; sidebar untouched: center = 1210-280 = 930.
+    // 240 + 400 + 600 = 1240 > 1210 → details 0; sidebar untouched: center = 1210-240 = 970.
     const cols = computeColumns(1210, open(SIDEBAR_DEFAULT), open(DETAILS_DEFAULT))
-    expect(cols).toEqual({ sidebar: 280, center: 930, details: 0 })
+    expect(cols).toEqual({ sidebar: 240, center: 970, details: 0 })
   })
 
   it('the sidebar never concedes: center absorbs the deficit below CENTER_MIN', () => {
-    // 700 < 280+640: sidebar keeps 280, center takes 420 < CENTER_MIN.
+    // 700 < 240+600: sidebar keeps 240, center takes 460 < CENTER_MIN.
     const cols = computeColumns(700, open(SIDEBAR_DEFAULT), closed(DETAILS_DEFAULT))
-    expect(cols).toEqual({ sidebar: SIDEBAR_DEFAULT, center: 420, details: 0 })
+    expect(cols).toEqual({ sidebar: SIDEBAR_DEFAULT, center: 460, details: 0 })
   })
 
   it('sidebar-closed narrow window: details concedes then auto-closes', () => {

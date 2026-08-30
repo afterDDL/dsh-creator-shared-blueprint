@@ -11,7 +11,9 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type AgentFactory } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import SessionStore, { SessionId, type Session } from '@deepseek-ai/dsh-session'
+import SessionStore, {
+  SessionId, type Session, type SessionEvent, type SessionHeader,
+} from '@deepseek-ai/dsh-session'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { RpcId, type RpcRequest } from '../src/api/rpc.ts'
 import type { HostFrame } from '../src/api/events.ts'
@@ -111,7 +113,11 @@ async function harness(
   await ctx.plugin(SessionStore)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(UserQuestionService)
-  ctx.provide('sessionPersistence', (persistence ?? { list: () => Promise.resolve([]) }) as never)
+  const sessionPersistence = (persistence ?? { list: () => Promise.resolve([]) }) as {
+    list: () => Promise<SessionHeader[]>
+    inspect?: (sessionId: SessionId) => Promise<{ meta: SessionHeader; events: SessionEvent[] }>
+  }
+  ctx.provide('sessionPersistence', sessionPersistence as never)
   if (presets !== undefined) ctx.provide('agentPresets', roster(presets, options.userIds) as never)
 
   const factory: AgentFactory = {
@@ -130,8 +136,19 @@ async function harness(
       const unregister = ctx.agents.register(agent)
       return { agent, dispose: () => { unregister(); return Promise.resolve() } }
     },
-    async resume() {
-      throw new Error('test harness has no persisted sessions')
+    async resume(_ownerCtx, options) {
+      if (sessionPersistence.inspect === undefined) throw new Error('test harness has no persisted sessions')
+      const inspected = await sessionPersistence.inspect(options.resumeSessionId)
+      const session = ctx.sessions.create(options.resumeSessionId, {
+        seed: inspected.events,
+        meta: inspected.meta,
+      })
+      const agent = stubAgent(session)
+      const agentCtx = ctx.extend({ agent })
+      ;(agent as { ctx?: Context }).ctx = agentCtx
+      await options.setup?.(agentCtx)
+      const unregister = ctx.agents.register(agent)
+      return { agent, dispose: () => { unregister(); return Promise.resolve() } }
     },
   }
   ctx.agents.setFactory(factory)
@@ -208,6 +225,27 @@ describe('session.create with an agent preset', () => {
     expect(stale.result.ok).toBe(false)
     if (stale.result.ok) throw new Error('unreachable')
     expect(stale.result.error.details).toMatchObject({ existingPreset: 'minimal' })
+  })
+
+  it('adopts a cold session under the preset selected in its durable log', async () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-preset-cold-')))
+    const meta: SessionHeader = {
+      version: 0, id: SessionId('cold-switched'), createdAt: 1, cwd, agentPreset: 'standard',
+    }
+    const events: SessionEvent[] = [{
+      type: 'agent-preset/selected', seq: 0, time: 1, data: { agentPreset: 'minimal' },
+    }]
+    const { api, ctx } = await harness(['standard', 'minimal'], {
+      list: () => Promise.resolve([meta]),
+      inspect: () => Promise.resolve({ meta, events }),
+    }, { defaults: { cwd } })
+
+    const adopted = await api.sessions.create(request({ sessionId: meta.id, cwd }))
+
+    expect(adopted.result).toEqual({
+      ok: true, value: { sessionId: meta.id, agentPreset: 'minimal' },
+    })
+    expect(resolveSessionPreset(ctx.sessions.get(meta.id)!)).toBe('minimal')
   })
 
   it('adopts a live session unchanged when the caller names no preset', async () => {

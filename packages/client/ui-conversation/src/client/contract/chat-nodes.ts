@@ -50,6 +50,11 @@ export interface RetryChatData {
   readonly current: ModelRetryNode
 }
 
+/** Client-only marker that suppresses implementation rows while retaining human input in one Turn. */
+export interface InternalTurnPresentationData {
+  readonly internalTurnPresentation: 'implementation-only'
+}
+
 /** Turn-local footer row that owns actions and optional feature contributions. */
 export interface TurnTailChatData {
   readonly turn: number

@@ -122,6 +122,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * instead; this one is the whole panel.
      */
     'conversation.details.tool': { kind: 'single'; scope: 'session'; owner: DetailsToolOwnerProps }
+    /** Default right-column surface rendered while no Tool call is selected. */
+    'conversation.details.default': { kind: 'single'; scope: 'session' }
     /**
      * The composer takeover chain: entries are selector-routed replacements
      * of the default InputBar. Declared by this package's 'conversation'
@@ -418,10 +420,13 @@ export interface ConversationInjected {
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
   /**
    * Framework-bound sources. `composerBlock` is this session's block when a
-   * plugin raised one; the reason is the blocker's own localized copy, which
-   * the root renders as the inert composer's placeholder.
+   * plugin raised one; `composerInteractions` carries exact external waits
+   * that remain owned by another Session but are presented here.
    */
-  hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
+  hooks: {
+    composerBlock: ObservableSnapshot<ComposerBlock | undefined>
+    composerInteractions: ObservableSnapshot<readonly PendingInteraction[]>
+  }
 }
 
 /** Business callbacks injected into the strict Session body seat. */
@@ -722,7 +727,8 @@ export interface DetailsInjected {
 }
 
 /** Full details-slot props: selection store, Tool output seat, injected close callback, and locale. */
-export type DetailsSlotProps = PropsRuntime<'details'> & PropsRenderSlots<'conversation.details.tool'>
+export type DetailsSlotProps = PropsRuntime<'details'>
+  & PropsRenderSlots<'conversation.details.tool' | 'conversation.details.default'>
   & PropsStore<ChatStore> & DetailsInjected & PropsLocale<'conversation'>
 
 /** Owner share common to the hero / New-Session Workspace pickers. */

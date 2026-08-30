@@ -385,6 +385,85 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'blueprintAdapter',
+    summary: 'Project and narrowly edit real agent presets for Interactive Blueprint.',
+    description: 'Project and narrowly edit real agent presets for Interactive Blueprint.',
+    methods: [
+      {
+        signature: '@Remote(\'get\') async get(request: BlueprintGetRequest): Promise<Blueprint>',
+        description: 'Project one preset through the Host Remote API.',
+        parameters: [{ name: 'request', description: 'preset identity.' }],
+        returns: 'one freshly assembled Blueprint.',
+      },
+      {
+        signature: 'async read(presetId: string, options: BlueprintReadOptions = {}): Promise<Blueprint>',
+        description: 'Project preset text, its mounted runtime assembly, and effective permissions.',
+        parameters: [{ name: 'presetId', description: 'preset resolved by the real roster.' }, { name: 'options', description: 'optional live agent for session-specific assembly and access.' }],
+        returns: 'one JSON-serializable Blueprint.',
+      },
+      {
+        signature: 'async updateIdentity(request: BlueprintIdentityWrite): Promise<Blueprint>',
+        description: 'Update the role-only Identity slot in one supported persona sentence.',
+        parameters: [{ name: 'request', description: 'optimistic Identity update addressed by its stable node id.' }],
+        returns: 'the Blueprint re-read from the next preset generation.',
+      },
+      {
+        signature: 'async updatePurpose(request: BlueprintTextWrite): Promise<Blueprint>',
+        description: 'Update the inferred Purpose sentence in the real persona scalar.',
+        parameters: [{ name: 'request', description: 'optimistic single-line update.' }],
+        returns: 'the Blueprint re-read from the next preset generation.',
+      },
+      {
+        signature: 'async updateBehavior(request: BlueprintBehaviorWrite): Promise<Blueprint>',
+        description: 'Update one numbered Behavior in the real persona scalar.',
+        parameters: [{ name: 'request', description: 'optimistic item update.' }],
+        returns: 'the Blueprint re-read from the next preset generation.',
+      },
+      {
+        signature: 'async updateOutput(request: BlueprintOutputWrite): Promise<Blueprint>',
+        description: 'Update the uniquely anchored Output item in the real persona scalar.',
+        parameters: [{ name: 'request', description: 'optimistic inferred-output update.' }],
+        returns: 'the Blueprint re-read from the next preset generation.',
+      },
+      {
+        signature: 'async setWebFetch(request: Omit<BlueprintCapabilityWrite, \'capability\'>): Promise<Blueprint>',
+        description: 'Add or remove Web Fetch by updating the real `tool-web.config.fetch` field.',
+        parameters: [{ name: 'request', description: 'optimistic capability update.' }],
+        returns: 'the Blueprint re-read from the next preset generation.',
+      },
+      {
+        signature: 'async setCapability(request: BlueprintCapabilityWrite): Promise<Blueprint>',
+        description: 'Enable or disable one admitted Web capability through its typed preset field.',
+        parameters: [{ name: 'request', description: 'optimistic capability update.' }],
+        returns: 'the Blueprint re-read from the next preset generation.',
+      },
+      {
+        signature: '@Remote async applyChangeSet(request: BlueprintApplyChangeSetRequest): Promise<BlueprintApplyChangeSetResult>',
+        description: 'Apply one confirmed Change Set after whole-set preflight and in-memory staging.',
+        parameters: [{ name: 'request', description: 'source-owned Proposal identity plus an exact copy of its closed typed transaction.' }],
+        returns: 'the immutable terminal transaction evidence; only `committed` changes the preset without recovery.',
+      },
+      {
+        signature: '@Remote async cancelChangeSet(request: BlueprintCancelChangeSetRequest): Promise<BlueprintProposalCancellation>',
+        description: 'Dismiss one exact durable Proposal without changing its preset.',
+        parameters: [{ name: 'request', description: 'source Session, interaction, and Proposal Tool-call identity.' }],
+        returns: 'the immutable cancellation terminal recovered by later context refreshes.',
+      },
+      {
+        signature: '@Remote async setConversationContext( request: BlueprintConversationContextRequest, ): Promise<BlueprintConversationContextResult>',
+        description: 'Synchronize one live conversation\'s optional Blueprint context and proposal Tool.',
+        parameters: [{ name: 'request', description: 'Session plus target projection, Creator Draft, or Session alone to clear.' }],
+        returns: 'scoped conversation state and that Session\'s recorded Apply outcomes.',
+      },
+      {
+        signature: '@Remote async validateSession(request: BlueprintValidateSessionRequest): Promise<BlueprintSessionValidation>',
+        description: 'Compare one new Session\'s prompt content, tool schemas, permissions, and preset identity with a fresh projection.',
+        parameters: [{ name: 'request', description: 'expected preset revision, live Session identity, and optional P0 Change Set receipt.' }],
+        returns: 'digest-only runtime evidence; raw prompt and schemas remain on the Host.',
+      },
+    ],
+  },
+  {
     key: 'clientModules',
     summary: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap.',
     description: 'The web plugin table service: incremental `dsh.client` scan + wire composition + bundle route + index tap. Construction runs the activation scan synchronously — a malformed declaration or missing bundle among the already-loaded entries aggregates into one loud throw (FAILED fiber; the boot activation audit reports it).',
@@ -2734,6 +2813,190 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
+  },
+  {
+    name: 'Blueprint',
+    declaration: 'export interface Blueprint {\n    schemaVersion: 1;\n    sourceLanguage?: string;\n    preset: {\n        id: string;\n        trust: \'system\' | \'user\';\n        name?: string;\n        description?: string;\n    };\n    revision: string;\n    nodes: BlueprintNode[];\n    runtime: BlueprintRuntimeSnapshot;\n    mappingGaps: BlueprintMappingGap[];\n}',
+  },
+  {
+    name: 'BlueprintApplyChangeSetRequest',
+    declaration: 'export interface BlueprintApplyChangeSetRequest {\n    sourceSessionId: string;\n    routeId: string;\n    changeSetId: string;\n    presetId: string;\n    baseRevision: string;\n    operations: BlueprintChangeSetOperation[];\n}',
+  },
+  {
+    name: 'BlueprintApplyChangeSetResult',
+    declaration: 'export interface BlueprintApplyChangeSetResult {\n    sourceSessionId: string;\n    routeId: string;\n    changeSetId: string;\n    baseRevision: string;\n    committedRevision?: string;\n    status: BlueprintApplyChangeSetStatus;\n    operations: BlueprintChangeSetOperation[];\n    preflight: {\n        ok: true;\n    } | {\n        ok: false;\n        reason: string;\n    };\n    unexpectedDrift: string[];\n    failure?: string;\n}',
+  },
+  {
+    name: 'BlueprintApplyChangeSetStatus',
+    declaration: 'export type BlueprintApplyChangeSetStatus = \'committed\' | \'preflight_failed\' | \'staging_failed\' | \'commit_failed\' | \'reprojection_failed_recovered\' | \'reprojection_failed_conflict\' | \'reprojection_failed_recovery_failed\';',
+  },
+  {
+    name: 'BlueprintApplyReceipt',
+    declaration: 'export interface BlueprintApplyReceipt extends BlueprintApplyResultEvent {\n    terminalSeq: number;\n}',
+  },
+  {
+    name: 'BlueprintApplyResultEvent',
+    declaration: 'export interface BlueprintApplyResultEvent {\n    sourceSessionId: string;\n    routeId: string;\n    proposalResultSeq: number;\n    presetId: string;\n    result: BlueprintApplyChangeSetResult;\n}',
+  },
+  {
+    name: 'BlueprintBehaviorWrite',
+    declaration: 'export interface BlueprintBehaviorWrite extends BlueprintTextWrite {\n    ordinal: number;\n}',
+  },
+  {
+    name: 'BlueprintCancelChangeSetRequest',
+    declaration: 'export interface BlueprintCancelChangeSetRequest {\n    sourceSessionId: string;\n    routeId: string;\n    changeSetId: string;\n}',
+  },
+  {
+    name: 'BlueprintCapabilityAuthoringEvent',
+    declaration: 'export type BlueprintCapabilityAuthoringEvent = {\n    routeId: string;\n    sourceSessionId: string;\n    targetPresetId: string;\n    request: string;\n    kind: BlueprintCapabilityAuthoringKind;\n    baseRevision: string;\n    baselinePresets: BlueprintCapabilityPresetBaseline[];\n    baselineNodes: Pick<BlueprintNode, \'id\' | \'type\' | \'value\' | \'source\' | \'status\'>[];\n    baselineSkills: BlueprintRuntimeSkill[];\n    baselineDelegations: BlueprintRuntimeDelegation[];\n} & ({\n    state: \'started\';\n} | {\n    state: \'ended\';\n    startSeq: number;\n    outcome: \'completed\' | \'failed\' | \'cancelled\';\n    skillEvidence?: {\n        turnEndSeq: number;\n        revision: string;\n        skills: Pick<BlueprintRuntimeSkill, \'name\' | \'definitionDigest\' | \'invocation\'>[];\n    };\n    subagentEvidence?: {\n        turnEndSeq: number;\n        revision: string;\n        delegations: BlueprintRuntimeDelegation[];\n        verification: BlueprintSessionValidation;\n    };\n    subagentFailure?: {\n        turnEndSeq: number;\n        prerequisite: \'mounted_delegation_delta\' | \'runtime_conformance\' | \'projection\';\n        message: string;\n    };\n});',
+  },
+  {
+    name: 'BlueprintCapabilityAuthoringKind',
+    declaration: 'export type BlueprintCapabilityAuthoringKind = \'skill\' | \'subagent\';',
+  },
+  {
+    name: 'BlueprintCapabilityPresetBaseline',
+    declaration: 'export interface BlueprintCapabilityPresetBaseline {\n    id: string;\n    trust: \'system\' | \'user\';\n    name?: string;\n    description?: string;\n    order?: number;\n    broken?: string;\n    compositionDigest: string | null;\n}',
+  },
+  {
+    name: 'BlueprintCapabilityWrite',
+    declaration: 'export interface BlueprintCapabilityWrite {\n    presetId: string;\n    revision: string;\n    expected: boolean;\n    enabled: boolean;\n    capability: \'web-search\' | \'web-fetch\';\n}',
+  },
+  {
+    name: 'BlueprintChangeReceipt',
+    declaration: 'export interface BlueprintChangeReceipt {\n    changeSetId: string;\n    baseRevision: string;\n    committedRevision: string;\n    apply: {\n        preflight: \'pass\';\n        presetWrite: \'pass\';\n        reprojection: \'pass\';\n        semanticDrift: \'none\';\n    };\n    runtime: {\n        prompt: BlueprintConformanceStatus;\n        tools: BlueprintConformanceStatus;\n        skills: BlueprintConformanceStatus;\n        delegations: BlueprintConformanceStatus;\n        permissions: BlueprintConformanceStatus;\n        overall: BlueprintConformanceStatus;\n    };\n}',
+  },
+  {
+    name: 'BlueprintChangeSetCapabilityOperation',
+    declaration: 'export interface BlueprintChangeSetCapabilityOperation {\n    operation: \'setCapability\';\n    targetNodeId: string;\n    capability: \'web-search\' | \'web-fetch\';\n    expected: boolean;\n    enabled: boolean;\n}',
+  },
+  {
+    name: 'BlueprintChangeSetOperation',
+    declaration: 'export type BlueprintChangeSetOperation = BlueprintChangeSetTextOperation | BlueprintChangeSetCapabilityOperation;',
+  },
+  {
+    name: 'BlueprintChangeSetTextOperation',
+    declaration: 'export type BlueprintChangeSetTextOperation = {\n    targetNodeId: string;\n    expected: string;\n    value: string;\n} & ({\n    operation: \'updateIdentity\';\n} | {\n    operation: \'updatePurpose\';\n} | {\n    operation: \'updateBehavior\';\n} | {\n    operation: \'updateOutput\';\n});',
+  },
+  {
+    name: 'BlueprintConformanceStatus',
+    declaration: 'export type BlueprintConformanceStatus = \'pass\' | \'fail\';',
+  },
+  {
+    name: 'BlueprintConversationContextRequest',
+    declaration: 'export interface BlueprintConversationContextRequest {\n    sessionId: string;\n    presetId?: string;\n    revision?: string;\n    selectedNodeId?: string;\n    userChange?: BlueprintUserChangeInput;\n    directEditInput?: BlueprintStructuredEditInput;\n    capabilityInput?: {\n        routeId: string;\n        userRequest: string;\n    };\n    creatorDraft?: {\n        name: string;\n        status: \'creating\' | \'waiting\' | \'paused\' | \'ambiguity\';\n        targetPresetId?: string;\n        selectedNodeId?: string;\n    };\n    creatorAuthoring?: {\n        routeId: string;\n        sourceSessionId: string;\n        request: string;\n        name: string;\n        sourceLanguage?: string;\n        handoff?: NonNullable<BlueprintCreatorAuthoringRoute[\'handoff\']>;\n    };\n    recoverCreatorAuthoring?: boolean;\n    capabilityAuthoring?: {\n        routeId: string;\n        sourceSessionId: string;\n        targetPresetId: string;\n        request: string;\n        baseRevision: string;\n        kind: BlueprintCapabilityAuthoringKind;\n    };\n    recoverCapabilityAuthoring?: boolean;\n    capabilityAuthoringEnd?: {\n        outcome: \'completed\' | \'failed\' | \'cancelled\';\n    };\n}',
+  },
+  {
+    name: 'BlueprintConversationContextResult',
+    declaration: 'export interface BlueprintConversationContextResult {\n    applyReceipts?: BlueprintApplyReceipt[];\n    proposalCancellations?: BlueprintProposalCancellation[];\n    sessionId: string;\n    active: boolean;\n    presetId?: string;\n    selectedNodeId?: string;\n    directEditEnqueue?: {\n        routeId: string;\n        sourceSessionId: string;\n        routingInputSeq: number;\n        messageId: MessageId;\n    };\n    creatorAuthoring?: BlueprintCreatorAuthoringEvent & {\n        startSeq: number;\n        terminal?: BlueprintCreatorAuthoringEnd;\n    };\n    capabilityAuthoring?: {\n        routeId: string;\n        sourceSessionId: string;\n        targetPresetId: string;\n        request: string;\n        kind: BlueprintCapabilityAuthoringKind;\n        baseRevision: string;\n        startSeq: number;\n        baselineDelegationRowIds: string[];\n    };\n    capabilityAuthoringRecord?: {\n        routeId: string;\n        sourceSessionId: string;\n        targetPresetId: string;\n        request: string;\n        kind: BlueprintCapabilityAuthoringKind;\n        baseRevision: string;\n        startSeq: number;\n        baselineDelegationRowIds: string[];\n        state: \'active\' | \'ended\';\n        endSeq?: number;\n        outcome?: \'completed\' | \'failed\' | \'cancelled\';\n        subagentEvidence?: Extract<BlueprintCapabilityAuthoringEvent, {\n            state: \'ended\';\n        }>[\'subagentEvidence\'];\n        subagentFailure?: Extract<BlueprintCapabilityAuthoringEvent, {\n            state: \'ended\';\n         /* …truncated — full shape in source */',
+  },
+  {
+    name: 'BlueprintCreatorAuthoringEnd',
+    declaration: 'export type BlueprintCreatorAuthoringEnd = {\n    routeId: string;\n    startSeq: number;\n    turnEndSeq: number;\n} & ({\n    outcome: \'completed\';\n    targetPresetId: string;\n    validationSeq: number;\n} | {\n    outcome: \'failed\' | \'cancelled\';\n});',
+  },
+  {
+    name: 'BlueprintCreatorAuthoringEvent',
+    declaration: 'export interface BlueprintCreatorAuthoringEvent extends BlueprintCreatorAuthoringRoute {\n    sourceSessionId: string;\n    language?: string;\n}',
+  },
+  {
+    name: 'BlueprintCreatorAuthoringRoute',
+    declaration: 'export interface BlueprintCreatorAuthoringRoute {\n    operation: \'create-agent\';\n    routeId: string;\n    request: string;\n    name: string;\n    sourceLanguage?: string;\n    handoff?: {\n        sourceTurn: number;\n        targetCreatorSessionId: string;\n    };\n}',
+  },
+  {
+    name: 'BlueprintDelegationEvidence',
+    declaration: 'export interface BlueprintDelegationEvidence {\n    nodeId: string;\n    rowId: string;\n    tool: string;\n    provider: string;\n    providerAvailable: boolean;\n    sectionName?: string;\n    expectedSectionDigest?: string;\n    liveSectionDigest?: string;\n    status: BlueprintConformanceStatus;\n}',
+  },
+  {
+    name: 'BlueprintGetRequest',
+    declaration: 'export interface BlueprintGetRequest {\n    presetId: string;\n}',
+  },
+  {
+    name: 'BlueprintIdentityWrite',
+    declaration: 'export interface BlueprintIdentityWrite extends BlueprintTextWrite {\n    nodeId: string;\n}',
+  },
+  {
+    name: 'BlueprintMappingGap',
+    declaration: 'export interface BlueprintMappingGap {\n    field: string;\n    reason: string;\n}',
+  },
+  {
+    name: 'BlueprintNode',
+    declaration: 'export interface BlueprintNode {\n    id: string;\n    type: BlueprintNodeType;\n    value: JsonValue;\n    source: BlueprintSource;\n    status: BlueprintStatus;\n    editable: boolean;\n    adapterRef: string | null;\n}',
+  },
+  {
+    name: 'BlueprintNodeType',
+    declaration: 'export type BlueprintNodeType = \'purpose\' | \'identity\' | \'capability\' | \'behavior\' | \'output\' | \'access\';',
+  },
+  {
+    name: 'BlueprintOutputWrite',
+    declaration: 'export interface BlueprintOutputWrite extends BlueprintTextWrite {\n    ordinal: number;\n}',
+  },
+  {
+    name: 'BlueprintPromptEvidence',
+    declaration: 'export interface BlueprintPromptEvidence {\n    nodeId: string;\n    nodeType: \'identity\' | \'purpose\' | \'behavior\' | \'output\';\n    sectionName?: string;\n    expectedSectionDigest?: string;\n    liveSectionDigest?: string;\n    status: BlueprintConformanceStatus;\n}',
+  },
+  {
+    name: 'BlueprintProposalCancellation',
+    declaration: 'export interface BlueprintProposalCancellation {\n    sourceSessionId: string;\n    routeId: string;\n    proposalResultSeq: number;\n    changeSetId: string;\n    presetId: string;\n    baseRevision: string;\n    status: \'cancelled\';\n}',
+  },
+  {
+    name: 'BlueprintProposalValue',
+    declaration: 'export type BlueprintProposalValue = string | boolean;',
+  },
+  {
+    name: 'BlueprintReadOptions',
+    declaration: 'export interface BlueprintReadOptions {\n    agent?: Agent;\n    cwd?: string;\n}',
+  },
+  {
+    name: 'BlueprintRuntimeDelegation',
+    declaration: 'export interface BlueprintRuntimeDelegation {\n    rowId: string;\n    tool: string;\n    provider: string;\n    mode: \'one-shot\' | \'continuable\';\n    configDigest: string;\n    providerAvailable: boolean;\n    enabled: boolean;\n}',
+  },
+  {
+    name: 'BlueprintRuntimeSkill',
+    declaration: 'export interface BlueprintRuntimeSkill {\n    name: string;\n    description: string;\n    invocation: {\n        modelInvocable: boolean;\n        userInvocable: boolean;\n    };\n    scope: \'preset\' | \'inherited\';\n    provider: string;\n    source: string;\n    definitionDigest: string;\n}',
+  },
+  {
+    name: 'BlueprintRuntimeSnapshot',
+    declaration: 'export interface BlueprintRuntimeSnapshot {\n    tools: string[];\n    promptSections: string[];\n    skills: BlueprintRuntimeSkill[];\n    delegations: BlueprintRuntimeDelegation[];\n    permissions: {\n        preset: string;\n        sandbox?: string;\n        approval?: string;\n    } | null;\n}',
+  },
+  {
+    name: 'BlueprintSessionBindingEvidence',
+    declaration: 'export interface BlueprintSessionBindingEvidence {\n    status: BlueprintConformanceStatus;\n    sessionPresetId?: string;\n    composedPresetId?: string;\n    expectedRevision: string;\n    projectedRevision: string;\n    strictRevisionBound: false;\n}',
+  },
+  {
+    name: 'BlueprintSessionValidation',
+    declaration: 'export interface BlueprintSessionValidation {\n    sessionId: string;\n    presetId: string;\n    valid: boolean;\n    overall: BlueprintConformanceStatus;\n    binding: BlueprintSessionBindingEvidence;\n    prompt: {\n        status: BlueprintConformanceStatus;\n        evidence: BlueprintPromptEvidence[];\n    };\n    tools: {\n        status: BlueprintConformanceStatus;\n        evidence: BlueprintToolEvidence[];\n        missing: string[];\n        unexpected: string[];\n        schemaMismatches: string[];\n    };\n    skills: {\n        status: BlueprintConformanceStatus;\n        evidence: BlueprintSkillEvidence[];\n        missing: string[];\n        unexpected: string[];\n    };\n    delegations: {\n        status: BlueprintConformanceStatus;\n        evidence: BlueprintDelegationEvidence[];\n    };\n    permissions: {\n        status: BlueprintConformanceStatus;\n    };\n    changeReceipt?: BlueprintChangeReceipt;\n}',
+  },
+  {
+    name: 'BlueprintSkillEvidence',
+    declaration: 'export interface BlueprintSkillEvidence {\n    nodeId: string;\n    name: string;\n    actualPresent: boolean;\n    expectedDefinitionDigest: string;\n    liveDefinitionDigest?: string;\n    status: BlueprintConformanceStatus;\n}',
+  },
+  {
+    name: 'BlueprintSource',
+    declaration: 'export type BlueprintSource = \'preset\' | \'runtime\' | \'inherited\' | \'inferred\';',
+  },
+  {
+    name: 'BlueprintStatus',
+    declaration: 'export type BlueprintStatus = \'active\' | \'inactive\' | \'unmapped\';',
+  },
+  {
+    name: 'BlueprintStructuredEditInput',
+    declaration: 'export type BlueprintStructuredEditInput = {\n    sourceSessionId: string;\n    routeId: string;\n    nodeId: string;\n} & ({\n    nodeType: \'identity\' | \'purpose\' | \'behavior\' | \'output\';\n    expectedValue: string;\n    proposedValue: string;\n} | {\n    nodeType: \'capability\';\n    expectedValue: boolean;\n    proposedValue: boolean;\n});',
+  },
+  {
+    name: 'BlueprintTextWrite',
+    declaration: 'export interface BlueprintTextWrite {\n    presetId: string;\n    revision: string;\n    expected: string;\n    value: string;\n}',
+  },
+  {
+    name: 'BlueprintToolEvidence',
+    declaration: 'export interface BlueprintToolEvidence {\n    nodeId: string;\n    tool: string;\n    expectedEnabled: boolean;\n    actualPresent: boolean;\n    expectedSchemaDigest?: string;\n    liveSchemaDigest?: string;\n    status: BlueprintConformanceStatus;\n}',
+  },
+  {
+    name: 'BlueprintUserChangeInput',
+    declaration: 'export interface BlueprintUserChangeInput {\n    nodeId: string;\n    previousValue: BlueprintProposalValue;\n}',
+  },
+  {
+    name: 'BlueprintValidateSessionRequest',
+    declaration: 'export type BlueprintValidateSessionRequest = {\n    sessionId: string;\n    presetId: string;\n    expectedRevision: string;\n} & ({\n    sourceSessionId: string;\n    routeId: string;\n    changeSetId: string;\n} | {\n    sourceSessionId?: never;\n    routeId?: never;\n    changeSetId?: never;\n});',
   },
   {
     name: 'Branded',

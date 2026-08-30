@@ -41,6 +41,7 @@ const USER_AGENTS_RANK = 500
 const DEFAULT_WATCH_STABILITY_THRESHOLD_MS = 200
 const DEFAULT_WATCH_POLL_INTERVAL_MS = 100
 const DEFAULT_WATCH_MAX_PROJECTS = 128
+const DEFAULT_WATCH_USE_POLLING = process.platform === 'win32'
 
 export const name = 'skill-filesystem'
 export const inject = ['skills']
@@ -80,7 +81,7 @@ export const Config: Schema<Config> = z.object({
   agentsHome: z.string(),
   customSkillDirs: z.array(z.string()).default([]),
   watch: z.boolean().default(true),
-  watchUsePolling: z.boolean().default(false),
+  watchUsePolling: z.boolean().default(DEFAULT_WATCH_USE_POLLING),
   watchStabilityThresholdMs: z.number().default(DEFAULT_WATCH_STABILITY_THRESHOLD_MS),
   watchPollIntervalMs: z.number().default(DEFAULT_WATCH_POLL_INTERVAL_MS),
   watchMaxProjects: z.number().default(DEFAULT_WATCH_MAX_PROJECTS),
@@ -614,7 +615,7 @@ function resolveWatchConfig(config: Config): ResolvedWatchConfig {
   assertPositiveInteger('watchMaxProjects', maxProjects)
   return {
     enabled: config.watch ?? true,
-    usePolling: config.watchUsePolling ?? false,
+    usePolling: config.watchUsePolling ?? DEFAULT_WATCH_USE_POLLING,
     stabilityThresholdMs,
     pollIntervalMs,
     maxProjects,

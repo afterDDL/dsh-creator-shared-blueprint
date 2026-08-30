@@ -5,8 +5,9 @@ import type {
   ConversationViewBuilder, ConversationViewDefinition, LegacyConversationSlice,
   PartialAssistant, RunningToolCall,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ChatNode } from '../contract/chat-nodes.ts'
+import type { ChatNode, InternalTurnPresentationData } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
+import { hasInternalPresentation } from './common.ts'
 
 const EMPTY_KEYS: readonly string[] = []
 const EMPTY_TURNS: readonly number[] = []
@@ -132,6 +133,125 @@ function locationCoordinates(location: ConversationLocation): { turn?: number; s
   return {}
 }
 
+type InternalTurnPresentation = 'hide-all' | InternalTurnPresentationData['internalTurnPresentation']
+
+function internalInputTurn(node: ChatConversationViewNode): {
+  readonly turn: number
+  readonly presentation: InternalTurnPresentation
+} | undefined {
+  const turn = locationCoordinates(node.location).turn
+  if (turn === undefined) return undefined
+  if (node.kind === 'context') {
+    const source = (node.data as { readonly source?: unknown }).source
+    if (hasInternalPresentation(source)) return { turn, presentation: 'hide-all' }
+  }
+  const presentation = (node.data as Partial<InternalTurnPresentationData>).internalTurnPresentation
+  return presentation === 'implementation-only' ? { turn, presentation } : undefined
+}
+
+class InternalTurnProjection {
+  private readonly raw = new MutableChatNodeStore()
+  private readonly keysByTurn = new Map<number, Set<string>>()
+  private readonly markersByTurn = new Map<number, Map<InternalTurnPresentation, Set<string>>>()
+  private readonly internalKeys = new Set<string>()
+
+  get internallyHidden(): ReadonlySet<string> {
+    return this.internalKeys
+  }
+
+  replace(nodes: readonly ChatConversationViewNode[]): readonly ChatConversationViewNode[] {
+    this.raw.replace(nodes)
+    this.keysByTurn.clear()
+    this.markersByTurn.clear()
+    this.internalKeys.clear()
+    for (const node of nodes) this.index(node)
+    return nodes.map(node => this.project(node))
+  }
+
+  apply(upserts: readonly ChatConversationViewNode[]): readonly ChatConversationViewNode[] {
+    const affectedKeys = new Set<string>()
+    const previousMarkerStates = new Map<number, InternalTurnPresentation | undefined>()
+    const rememberMarkerState = (turn: number | undefined): void => {
+      if (turn === undefined || previousMarkerStates.has(turn)) return
+      previousMarkerStates.set(turn, this.turnPresentation(turn))
+    }
+
+    for (const node of upserts) {
+      const previous = this.raw.get(node.key)
+      rememberMarkerState(previous === undefined ? undefined : internalInputTurn(previous)?.turn)
+      rememberMarkerState(internalInputTurn(node)?.turn)
+      if (previous !== undefined) this.unindex(previous)
+      this.raw.upsert([node])
+      this.index(node)
+      affectedKeys.add(node.key)
+    }
+
+    for (const [turn, previousPresentation] of previousMarkerStates) {
+      if (previousPresentation === this.turnPresentation(turn)) continue
+      for (const key of this.keysByTurn.get(turn) ?? []) affectedKeys.add(key)
+    }
+
+    return [...affectedKeys]
+      .map(key => this.raw.get(key))
+      .filter((node): node is ChatConversationViewNode => node !== undefined)
+      .map(node => this.project(node))
+  }
+
+  private index(node: ChatConversationViewNode): void {
+    const turn = locationCoordinates(node.location).turn
+    if (turn === undefined) return
+    const keys = this.keysByTurn.get(turn) ?? new Set<string>()
+    keys.add(node.key)
+    this.keysByTurn.set(turn, keys)
+    const marker = internalInputTurn(node)
+    if (marker?.turn !== turn) return
+    const presentations = this.markersByTurn.get(turn) ?? new Map<InternalTurnPresentation, Set<string>>()
+    const markers = presentations.get(marker.presentation) ?? new Set<string>()
+    markers.add(node.key)
+    presentations.set(marker.presentation, markers)
+    this.markersByTurn.set(turn, presentations)
+  }
+
+  private unindex(node: ChatConversationViewNode): void {
+    const turn = locationCoordinates(node.location).turn
+    if (turn === undefined) return
+    this.removeIndexKey(this.keysByTurn, turn, node.key)
+    const marker = internalInputTurn(node)
+    if (marker?.turn !== turn) return
+    const presentations = this.markersByTurn.get(turn)
+    const markers = presentations?.get(marker.presentation)
+    if (presentations === undefined || markers === undefined) return
+    markers.delete(node.key)
+    if (markers.size === 0) presentations.delete(marker.presentation)
+    if (presentations.size === 0) this.markersByTurn.delete(turn)
+  }
+
+  private removeIndexKey(index: Map<number, Set<string>>, turn: number, key: string): void {
+    const keys = index.get(turn)
+    if (keys === undefined) return
+    keys.delete(key)
+    if (keys.size === 0) index.delete(turn)
+  }
+
+  private turnPresentation(turn: number): InternalTurnPresentation | undefined {
+    const presentations = this.markersByTurn.get(turn)
+    if ((presentations?.get('hide-all')?.size ?? 0) > 0) return 'hide-all'
+    return (presentations?.get('implementation-only')?.size ?? 0) > 0 ? 'implementation-only' : undefined
+  }
+
+  private project(node: ChatConversationViewNode): ChatConversationViewNode {
+    const turn = locationCoordinates(node.location).turn
+    const presentation = turn === undefined ? undefined : this.turnPresentation(turn)
+    const internal = presentation === 'hide-all'
+      || (presentation === 'implementation-only' && node.kind !== 'user' && node.kind !== 'steering')
+    if (internal) this.internalKeys.add(node.key)
+    else this.internalKeys.delete(node.key)
+    return internal && node.visibility === 'visible'
+      ? { ...node, visibility: 'hidden' }
+      : node
+  }
+}
+
 function orderedVisible(nodes: readonly ChatConversationViewNode[]): ChatConversationViewNode[] {
   return nodes
     .filter(node => node.visibility === 'visible')
@@ -152,8 +272,9 @@ const EMPTY_CONTRIBUTION: LegacyContribution = {
   running: null,
 }
 
-function legacyContribution(raw: ChatConversationViewNode): LegacyContribution {
+function legacyContribution(raw: ChatConversationViewNode, internallyHidden: boolean): LegacyContribution {
   const node = raw as ChatNode
+  if (internallyHidden) return EMPTY_CONTRIBUTION
   // Content-free settled Assistants remain in the finalized compatibility
   // stream so StatsLine preserves its pre-assembly step counts; hidden running
   // attempts have no final Node to contribute.
@@ -241,13 +362,14 @@ class LegacySliceBuilder {
   replace(
     nodes: readonly ChatConversationViewNode[],
     timeline: ConversationTimelineSnapshot,
+    internallyHidden: ReadonlySet<string>,
   ): LegacyConversationSlice {
     this.contributions.clear()
     this.finalizedContributions.clear()
     this.runningContributions.clear()
     this.partialContributions.clear()
     for (const node of nodes) {
-      const contribution = legacyContribution(node)
+      const contribution = legacyContribution(node, internallyHidden.has(node.key))
       this.contributions.set(node.key, contribution)
       this.indexContribution(node.key, contribution)
     }
@@ -261,12 +383,13 @@ class LegacySliceBuilder {
   apply(
     upserts: readonly ChatConversationViewNode[],
     timeline: ConversationTimelineSnapshot,
+    internallyHidden: ReadonlySet<string>,
   ): LegacyConversationSlice {
     let finalizedChanged = false
     let runningChanged = false
     let partialChanged = false
     for (const node of upserts) {
-      const contribution = legacyContribution(node)
+      const contribution = legacyContribution(node, internallyHidden.has(node.key))
       const previous = this.contributions.get(node.key)
       if (sameContribution(previous, contribution)) continue
       finalizedChanged ||= finalizedContributionChanged(previous, contribution)
@@ -381,6 +504,7 @@ function partialContributionChanged(
 
 /** Incremental keyed Chat builder registered under the `chat` target. */
 export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversationViewNode, ChatSnapshot> {
+  private readonly projection = new InternalTurnProjection()
   private readonly store = new MutableChatNodeStore()
   private readonly locations = new MutableChatLocationIndex()
   private readonly legacy = new LegacySliceBuilder()
@@ -395,19 +519,25 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     readonly nodes: readonly ChatConversationViewNode[]
     readonly timeline: ConversationTimelineSnapshot
   }): ChatSnapshot {
-    this.store.replace(input.nodes)
-    this.order = orderedVisible(input.nodes).map(node => node.key)
+    const nodes = this.projection.replace(input.nodes)
+    this.store.replace(nodes)
+    this.order = orderedVisible(nodes).map(node => node.key)
     this.locations.rebuild(this.order, this.store)
-    return this.snapshot(input.timeline, this.legacy.replace(input.nodes, input.timeline))
+    return this.snapshot(input.timeline, this.legacy.replace(
+      nodes,
+      input.timeline,
+      this.projection.internallyHidden,
+    ))
   }
 
   apply(input: {
     readonly upserts: readonly ChatConversationViewNode[]
     readonly timeline: ConversationTimelineSnapshot
   }): ChatSnapshot {
+    const upserts = this.projection.apply(input.upserts)
     let structural = false
     const contentOnly: ChatConversationViewNode[] = []
-    for (const node of input.upserts) {
+    for (const node of upserts) {
       const previous = this.store.get(node.key)
       const nodeStructural = previous === undefined
         || previous.anchorSeq !== node.anchorSeq
@@ -416,19 +546,23 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
       structural ||= nodeStructural
       if (!nodeStructural) contentOnly.push(node)
     }
-    this.store.upsert(input.upserts)
+    this.store.upsert(upserts)
     if (structural) {
       const next = orderedVisible(this.store.values()).map(node => node.key)
       this.order = sameReferences(this.order, next) ? this.order : next
       this.locations.rebuild(this.order, this.store)
     }
     this.locations.touch(contentOnly)
-    return this.snapshot(input.timeline, this.legacy.apply(input.upserts, input.timeline))
+    return this.snapshot(input.timeline, this.legacy.apply(
+      upserts,
+      input.timeline,
+      this.projection.internallyHidden,
+    ))
   }
 
   private snapshot(
     timeline: ConversationTimelineSnapshot,
-    legacy = this.legacy.replace(EMPTY_LIST, timeline),
+    legacy = this.legacy.replace(EMPTY_LIST, timeline, this.projection.internallyHidden),
   ): ChatSnapshot {
     return {
       order: this.order,

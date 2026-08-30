@@ -8,7 +8,7 @@
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -40,6 +40,7 @@ import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
+import * as ToolAgentPresetAuthoring from '@deepseek-ai/dsh-tool-agent-preset-authoring'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
@@ -85,6 +86,13 @@ class CatalogAttachmentStore extends AttachmentStore {
 
   override readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('gen-tool-catalog: attachment reads are unreachable during schema harvest'))
+  }
+}
+
+/** Schema-harvest marker for the host preset service; catalog generation never executes authoring tools. */
+class CatalogAgentPresets extends Service {
+  constructor(ctx: Context) {
+    super(ctx, 'agentPresets')
   }
 }
 
@@ -182,6 +190,19 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-tool-agent-preset-authoring',
+    dir: 'tool-agent-preset-authoring',
+    source: 'packages/preset/tool-agent-preset-authoring/src/index.ts',
+    requires: ['ctx.tools', 'ctx.agentPresets'],
+    writes: ['tool/call', 'tool/result', 'a new user preset directory through ctx.agentPresets.copy'],
+    async mount(ctx) {
+      await ctx.plugin(CatalogAgentPresets)
+      await ctx.plugin(ToolAgentPresetAuthoring)
+    },
+    note:
+      'The shipped cordis preset mounts these five fixed schemas for Creator Sessions only. All operations delegate to the host preset service; ordinary Agent presets do not receive them.',
+  },
   {
     pkg: '@deepseek-ai/dsh-tool-ask-user',
     dir: 'tool-ask-user',

@@ -176,7 +176,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     this.hasMore = hasMore
     const sorted = [...entries].sort((left, right) => left.event.seq - right.event.seq)
     for (const entry of sorted) this.inputs.set(entry.event.seq, entry)
-    this.locationIndex.rebuild(sorted)
+    this.locationIndex.rebuild(sorted, hasMore)
     this.timelineDirty = true
     for (const entry of sorted) this.matchInput(entry)
     this.replayDependencies()
@@ -230,7 +230,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     for (const entry of fresh) this.inputs.set(entry.event.seq, entry)
     this.hasMore = hasMore
     const previousTimeline = this.locationIndex.snapshot()
-    const changedLocations = this.locationIndex.rebuild(this.sortedInputs())
+    const changedLocations = this.locationIndex.rebuild(this.sortedInputs(), hasMore)
     if (this.locationIndex.snapshot() !== previousTimeline) this.timelineDirty = true
     const affected = this.refreshMatchLocations(changedLocations)
     const pending = new Map<string, PendingMatch[]>()

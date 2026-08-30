@@ -36,11 +36,28 @@ describe('LayoutController', () => {
     expect(panels.setDetails).not.toHaveBeenCalled()
   })
 
-  it('fails loud before the root entry wired its actions', () => {
+  it('rejects a sidebar gesture before mount but retains the latest details request until root attachment', () => {
     const service = new LayoutController()
     expect(() => { service.toggleSidebar() }).toThrow(/panel actions not wired/)
-    expect(() => { service.openDetails() }).toThrow(/panel actions not wired/)
-    expect(() => { service.closeDetails() }).toThrow(/panel actions not wired/)
+    service.openDetails()
+    service.closeDetails()
+    service.openDetails()
+    const panels = fakePanels()
+    service.attachPanels(panels)
+    expect(panels.openDetails).toHaveBeenCalledOnce()
+    expect(panels.closeDetails).not.toHaveBeenCalled()
+    service.attachPanels(panels)
+    expect(panels.openDetails).toHaveBeenCalledOnce()
+  })
+
+  it('does not replay an early open when an explicit close supersedes it before mount', () => {
+    const service = new LayoutController()
+    service.openDetails()
+    service.closeDetails()
+    const panels = fakePanels()
+    service.attachPanels(panels)
+    expect(panels.openDetails).not.toHaveBeenCalled()
+    expect(panels.closeDetails).toHaveBeenCalledOnce()
   })
 
   it('re-attach overwrites the stale action set (entry re-register)', () => {

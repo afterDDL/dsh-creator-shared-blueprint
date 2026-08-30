@@ -18,6 +18,7 @@ Authoring is a host-side copy, and files are the editor. `agentPreset.write` bec
 - With the editor gone, hand-editing `agent.cordis.yml` is the ONLY composition edit, so the standing-mount layer grew stamp-keyed generations: `ensureStanding` compares the file's mtime+size and starts the next generation for later sessions ([standing-mounts note](../architecture/2026-08-08-per-preset-standing-mounts.md), updated in place). Without this, an edited file would serve stale compositions until process restart.
 - A copy is a full snapshot that drifts from an upgraded shipped source — accepted; the preset layer has no patch semantics (that is the bundle layer's `cordis.patch.yml`), and the shipped set itself pays the same cost (`cordis`/`code` are full copies of `standard`) for one-file readability.
 - `read` dropped `writable` (no editor to gate) and builtin directories are never opened (`openDocument` refuses non-`user` trust like `remove`): the install is overwritten by upgrades, and pointing an editor into it invites edits an upgrade silently discards.
+- The [Interactive Blueprint adapter](../feature/2026-08-24-interactive-blueprint-preset-adapter.md) adds a typed semantic Host API over user presets. It does not restore composition text, paths, or arbitrary YAML writes to the browser authoring API, so this decision continues to own that wire restriction.
 
 ## Load-bearing details
 

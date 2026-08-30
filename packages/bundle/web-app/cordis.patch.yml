@@ -258,6 +258,11 @@
     - id: ui-agent-preset
       name: '@deepseek-ai/dsh-client-ui-agent-preset'
 
+    # Interactive Agent Builder: real preset Blueprint projection, guarded
+    # write-back controls, selected chat context, and new-Session trial flow.
+    - id: ui-blueprint
+      name: '@deepseek-ai/dsh-client-ui-blueprint'
+
     # Plugin configuration: the host-plane sections a user owns, as expandable
     # cards. A namespace this deployment does not expose renders nothing.
     - id: ui-settings-plugins
@@ -422,3 +427,6 @@
       name: '@deepseek-ai/dsh-agent-presets'
       config:
         default: standard
+
+    - id: blueprint-adapter
+      name: '@deepseek-ai/dsh-blueprint-adapter'

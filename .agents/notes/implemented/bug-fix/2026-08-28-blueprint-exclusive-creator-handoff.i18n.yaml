@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-blueprint-exclusive-creator-handoff.md
+2026-08-28-blueprint-exclusive-creator-handoff.md: 8275610f6531a652e64fa41cf23d1a862370034a
+2026-08-28-blueprint-exclusive-creator-handoff.zh.md: 22f28eb63114fc440a6299eec8647c012af11b81

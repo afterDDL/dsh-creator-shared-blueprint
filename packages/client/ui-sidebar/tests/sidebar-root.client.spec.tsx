@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type {
-  SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
+  SidebarAgentsOwnerProps, SidebarFooterActionOwnerProps, SidebarRootComponentProps, SidebarSectionOwnerProps,
   SidebarSettingsOwnerProps,
 } from '../src/client/contract/slots.ts'
 import { SidebarRoot } from '../src/client/SidebarRoot.tsx'
@@ -24,6 +24,7 @@ const neverHook = (() => { throw new Error('shell must not read global hooks') }
 function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; width?: number } = {}) {
   const startSession = vi.fn()
   const toggleSidebar = vi.fn()
+  let agentsOwner: SidebarAgentsOwnerProps | undefined
   let regionOwner: SidebarSectionOwnerProps | undefined
   let settingsOwner: SidebarSettingsOwnerProps | undefined
   let footerActionOwner: SidebarFooterActionOwnerProps | undefined
@@ -35,8 +36,13 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
       startSession={startSession} toggleSidebar={toggleSidebar} t={t}
       renderSlot={((
         key: string,
-        owner: SidebarFooterActionOwnerProps | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
+        owner: SidebarAgentsOwnerProps | SidebarFooterActionOwnerProps
+          | SidebarSectionOwnerProps | SidebarSettingsOwnerProps,
       ) => {
+        if (key === 'sidebar.agents') {
+          agentsOwner = owner
+          return <div data-testid="agents-seat" data-wide={owner.wide} />
+        }
         if (key === 'sidebar.settings') {
           settingsOwner = owner
           return <div data-testid="settings-seat" data-wide={owner.wide} />
@@ -54,6 +60,10 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
   return {
     startSession,
     toggleSidebar,
+    agentsOwner: () => {
+      if (agentsOwner === undefined) throw new Error('agents owner not rendered')
+      return agentsOwner
+    },
     regionOwner: () => {
       if (regionOwner === undefined) throw new Error('region owner not rendered')
       return regionOwner
@@ -87,6 +97,7 @@ describe('SidebarRoot shell', () => {
 
   it('hands the region its wide flag and clamps expandSidebar to the collapsed state', () => {
     const b = mountShell()
+    expect(b.agentsOwner().wide).toBe(true)
     expect(b.regionOwner().wide).toBe(true)
     // The settings seat rides the same wide flag (ui-settings renders the row).
     expect(b.settingsOwner().wide).toBe(true)
@@ -101,9 +112,11 @@ describe('SidebarRoot shell', () => {
     const b = mountShell()
     b.rerender({ collapsed: true })
     // Wide content survives the crossfade window, then settles into the rail.
+    expect(b.agentsOwner().wide).toBe(true)
     expect(b.regionOwner().wide).toBe(true)
     vi.advanceTimersByTime(200)
     b.rerender({})
+    expect(b.agentsOwner().wide).toBe(false)
     expect(b.regionOwner().wide).toBe(false)
     expect(b.footerActionOwner().wide).toBe(false)
     expect(screen.getByTestId('region')).toBeTruthy()

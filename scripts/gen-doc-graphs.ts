@@ -266,7 +266,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'tools',
     title: 'Tool registry and guarded execution pipeline',
     mode: 'core',
-    consumers: ['agent-loop', 'tool-ask-user', 'tool-bash', 'tool-cordis', 'tool-fs', 'tool-terminal', 'tool-skill', 'tool-subagent', 'tool-todo', 'tool-web'],
+    consumers: ['agent-loop', 'tool-agent-preset-authoring', 'tool-ask-user', 'tool-bash', 'tool-cordis', 'tool-fs', 'tool-terminal', 'tool-skill', 'tool-subagent', 'tool-todo', 'tool-web'],
     note: 'Registers capabilities, owns Code Mode transport, and routes calls through pre-policy, monotonic guards, around dispatch, post-policy, and final-result observation.',
   },
   {
@@ -289,7 +289,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'agent-presets',
     title: 'Per-session agent composition',
     mode: 'core',
+    consumers: ['tool-agent-preset-authoring'],
     note: 'Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm.',
+  },
+  {
+    key: 'blueprintAdapter',
+    pkg: 'blueprint-adapter',
+    title: 'Preset Blueprint projection and narrow write-back',
+    mode: 'core',
+    note: 'Projects preset composition, runtime assembly, and access state; writes only Purpose, numbered Behavior, and Web Fetch for user-authored presets.',
   },
   {
     key: 'commands',

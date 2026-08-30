@@ -20,7 +20,7 @@
 | `agentsHome` | `$DSH_AGENTS_HOME` 或 `~/.agents` | 为兼容 skill 扫描的共享 agent（智能体）配置根目录。 |
 | `customSkillDirs` | `[]` | 在项目根目录之后、用户根目录之前扫描的其他本地 skill 根目录。 |
 | `watch` | `true` | 监视宿主本地根，并在目录成员或 frontmatter 可能发生变化时使本地提供方失效。 |
-| `watchUsePolling` | `false` | 对现有 skill 根使用 Chokidar 轮询，而不是原生事件。 |
+| `watchUsePolling` | Windows：`true`；其他平台：`false` | 对现有 skill 根使用 Chokidar 轮询，而不是原生事件。 |
 | `watchStabilityThresholdMs` | `200` | Chokidar `add` 和 `change` 事件的稳定写入窗口。 |
 | `watchPollIntervalMs` | `100` | Chokidar 轮询／稳定性间隔和缺失路径探测间隔。 |
 | `watchMaxProjects` | `128` | watcher LRU 中保留的不同项目根数量上限。 |

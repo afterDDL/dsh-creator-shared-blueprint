@@ -20,7 +20,7 @@ Requires `ctx.skills` (`inject: ['skills']`).
 | `agentsHome` | `$DSH_AGENTS_HOME` or `~/.agents` | Shared agent config root scanned for compatible skills. |
 | `customSkillDirs` | `[]` | Additional local skill roots scanned after project roots and before user roots. |
 | `watch` | `true` | Watch host-local roots and invalidate the local provider when catalog membership or frontmatter may have changed. |
-| `watchUsePolling` | `false` | Use Chokidar polling instead of native events for existing skill roots. |
+| `watchUsePolling` | Windows: `true`; others: `false` | Use Chokidar polling instead of native events for existing skill roots. |
 | `watchStabilityThresholdMs` | `200` | Stable-write window for Chokidar `add` and `change` events. |
 | `watchPollIntervalMs` | `100` | Chokidar polling/stability interval and missing-path probe interval. |
 | `watchMaxProjects` | `128` | Maximum distinct project roots retained in the watcher LRU. |

@@ -14,6 +14,8 @@ Two paired verbs, plus the read-only report.
 - `cordis_stop` — disposes the host half to quiescence and withdraws the browser half; the definition survives and can run again.
 - `cordis_undefine` — stops the package if needed and forgets the definition; its card stays in the conversation as an unloaded record.
 
+All live toolset instances under one DSH root share one Host inspect-provider registration. Starting another agent preset therefore does not duplicate process-global provider ids; disposing the final live instance withdraws the shared registration.
+
 Exact model-facing schemas: [the generated tool catalog](../../../docs/tool-catalog.md).
 
 Dynamic packages live only in the shared DSH process memory. They remain active across later turns and may affect other sessions in that process, but disappear after `cordis_stop`/`cordis_undefine`, toolset unload, or DSH restart. They create no Plugin file, install no package, change no `cordis.yml` or personal/project configuration, do not survive restart, and cannot be promoted automatically. To keep an experiment, ask the Agent to implement a normal local, project, or repository Plugin through the regular development workflow. Every verb is session-scoped: a package is visible and controllable only in the session that defined it.

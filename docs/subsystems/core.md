@@ -722,6 +722,101 @@ roots(): Agent[]
 
 Source: [`packages/core/agent/src/index.ts:256`](../../packages/core/agent/src/index.ts)
 
+<a id="ctxblueprintadapter--blueprintadapter"></a>
+
+### `ctx.blueprintAdapter` — `BlueprintAdapter`
+
+Project and narrowly edit real agent presets for Interactive Blueprint.
+
+```ts cordis-catalog
+/**
+ * Project one preset through the Host Remote API.
+ * @param request - preset identity.
+ * @returns one freshly assembled Blueprint.
+ */
+@Remote('get') async get(request: BlueprintGetRequest): Promise<Blueprint>
+
+/**
+ * Project preset text, its mounted runtime assembly, and effective permissions.
+ * @param presetId - preset resolved by the real roster.
+ * @param options - optional live agent for session-specific assembly and access.
+ * @returns one JSON-serializable Blueprint.
+ */
+async read(presetId: string, options: BlueprintReadOptions = {}): Promise<Blueprint>
+
+/**
+ * Update the role-only Identity slot in one supported persona sentence.
+ * @param request - optimistic Identity update addressed by its stable node id.
+ * @returns the Blueprint re-read from the next preset generation.
+ */
+async updateIdentity(request: BlueprintIdentityWrite): Promise<Blueprint>
+
+/**
+ * Update the inferred Purpose sentence in the real persona scalar.
+ * @param request - optimistic single-line update.
+ * @returns the Blueprint re-read from the next preset generation.
+ */
+async updatePurpose(request: BlueprintTextWrite): Promise<Blueprint>
+
+/**
+ * Update one numbered Behavior in the real persona scalar.
+ * @param request - optimistic item update.
+ * @returns the Blueprint re-read from the next preset generation.
+ */
+async updateBehavior(request: BlueprintBehaviorWrite): Promise<Blueprint>
+
+/**
+ * Update the uniquely anchored Output item in the real persona scalar.
+ * @param request - optimistic inferred-output update.
+ * @returns the Blueprint re-read from the next preset generation.
+ */
+async updateOutput(request: BlueprintOutputWrite): Promise<Blueprint>
+
+/**
+ * Add or remove Web Fetch by updating the real `tool-web.config.fetch` field.
+ * @param request - optimistic capability update.
+ * @returns the Blueprint re-read from the next preset generation.
+ */
+async setWebFetch(request: Omit<BlueprintCapabilityWrite, 'capability'>): Promise<Blueprint>
+
+/**
+ * Enable or disable one admitted Web capability through its typed preset field.
+ * @param request - optimistic capability update.
+ * @returns the Blueprint re-read from the next preset generation.
+ */
+async setCapability(request: BlueprintCapabilityWrite): Promise<Blueprint>
+
+/**
+ * Apply one confirmed Change Set after whole-set preflight and in-memory staging.
+ * @param request - source-owned Proposal identity plus an exact copy of its closed typed transaction.
+ * @returns the immutable terminal transaction evidence; only `committed` changes the preset without recovery.
+ */
+@Remote async applyChangeSet(request: BlueprintApplyChangeSetRequest): Promise<BlueprintApplyChangeSetResult>
+
+/**
+ * Dismiss one exact durable Proposal without changing its preset.
+ * @param request - source Session, interaction, and Proposal Tool-call identity.
+ * @returns the immutable cancellation terminal recovered by later context refreshes.
+ */
+@Remote async cancelChangeSet(request: BlueprintCancelChangeSetRequest): Promise<BlueprintProposalCancellation>
+
+/**
+ * Synchronize one live conversation's optional Blueprint context and proposal Tool.
+ * @param request - Session plus target projection, Creator Draft, or Session alone to clear.
+ * @returns scoped conversation state and that Session's recorded Apply outcomes.
+ */
+@Remote async setConversationContext( request: BlueprintConversationContextRequest, ): Promise<BlueprintConversationContextResult>
+
+/**
+ * Compare one new Session's prompt content, tool schemas, permissions, and preset identity with a fresh projection.
+ * @param request - expected preset revision, live Session identity, and optional P0 Change Set receipt.
+ * @returns digest-only runtime evidence; raw prompt and schemas remain on the Host.
+ */
+@Remote async validateSession(request: BlueprintValidateSessionRequest): Promise<BlueprintSessionValidation>
+```
+
+Source: [`packages/preset/blueprint-adapter/src/index.ts:320`](../../packages/preset/blueprint-adapter/src/index.ts)
+
 <a id="agent-events"></a>
 
 ### `agent/*` events

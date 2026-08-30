@@ -45,6 +45,16 @@ export interface AgentPresetSettings {
   default?: string
 }
 
+/** One committed preset generation captured for a Host-side projection. */
+export interface AgentPresetProjectionSnapshot {
+  /** Committed preset metadata resolved in the snapshot's filesystem operation. */
+  readonly preset: AgentPreset
+  /** Exact committed composition mounted by this snapshot. */
+  readonly composition: string
+  /** Standing registration scope for the same composition generation. */
+  readonly standingKey: ScopeKey
+}
+
 /** Runtime schema for the user-writable slice. */
 export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
   default: z.string(),
@@ -103,6 +113,16 @@ export class AgentPresets extends Service {
    * locally authored directory that claimed its name.
    */
   private readonly resolvedRoots: readonly PresetRoot[]
+
+  /**
+   * FIFO gates around formal preset filesystem operations.
+   *
+   * `roster` excludes whole-roster discovery from any publication, while one
+   * `preset:<id>` key excludes only operations that can dereference that
+   * preset's formal path. Promise values never reject, so a failed operation
+   * cannot poison the next waiter.
+   */
+  private readonly formalFilesystemGates = new Map<string, Promise<void>>()
 
   /**
    * The user layer over `config.default`, present only while a settings
@@ -192,12 +212,73 @@ export class AgentPresets extends Service {
     return this.settings?.get().default ?? this.config.default
   }
 
+  /** Run one FIFO formal-filesystem critical section. */
+  private async runFormalFilesystemOperation<T>(key: string, operation: () => Promise<T>): Promise<T> {
+    const predecessor = this.formalFilesystemGates.get(key)
+    const current = Promise.withResolvers<void>()
+    this.formalFilesystemGates.set(key, current.promise)
+    if (predecessor !== undefined) await predecessor
+    try {
+      return await operation()
+    } finally {
+      current.resolve()
+      if (this.formalFilesystemGates.get(key) === current.promise) {
+        this.formalFilesystemGates.delete(key)
+      }
+    }
+  }
+
+  /** Run one operation while every named formal preset path is stable. */
+  private async withStablePresets<T>(ids: readonly string[], operation: () => Promise<T>): Promise<T> {
+    const ordered = [...new Set(ids)].sort()
+    const enter = async (index: number): Promise<T> => {
+      const id = ordered[index]
+      if (id === undefined) return await operation()
+      return await this.runFormalFilesystemOperation(`preset:${id}`, async () => await enter(index + 1))
+    }
+    return await enter(0)
+  }
+
+  /** Discover the committed roster when the caller already owns the required gate. */
+  private async discoverCommitted(): Promise<AgentPreset[]> {
+    return await discoverPresets(this.resolvedRoots)
+  }
+
+  /** Resolve one committed preset when its formal path is already stable. */
+  private async resolveCommitted(id: string): Promise<AgentPreset> {
+    const presets = await this.discoverCommitted()
+    const found = presets.find(preset => preset.id === id)
+    if (found === undefined) {
+      throw new UnknownPresetError(id, presets.map(preset => preset.id))
+    }
+    return found
+  }
+
   /**
    * Every preset the configured roots currently supply.
    * @returns the presets, first-root-wins per id.
    */
   async list(): Promise<AgentPreset[]> {
-    return await discoverPresets(this.resolvedRoots)
+    return await this.runFormalFilesystemOperation('roster', async () => await this.discoverCommitted())
+  }
+
+  /**
+   * List the roster as seen by one Creator agent.
+   *
+   * A registered candidate replaces only the committed row with the same id;
+   * every other row and its order remain unchanged. A candidate for an id not
+   * yet committed is appended, which keeps it addressable to its owner without
+   * publishing it through {@link list}.
+   * @param agentCtx - the Creator agent whose private candidate may be visible.
+   * @returns the committed roster with that agent's candidate overlaid.
+   */
+  async listFor(agentCtx: Context): Promise<AgentPreset[]> {
+    const overlay = this.authoringOverlay(agentCtx)
+    const presets = await this.list()
+    if (overlay === undefined) return presets
+    const index = presets.findIndex(preset => preset.id === overlay.id)
+    if (index < 0) return [...presets, overlay]
+    return presets.map((preset, candidateIndex) => candidateIndex === index ? overlay : preset)
   }
 
   /**
@@ -212,12 +293,21 @@ export class AgentPresets extends Service {
    */
   async resolve(id?: string): Promise<AgentPreset> {
     const wanted = id ?? this.defaultId
-    const presets = await this.list()
-    const found = presets.find(preset => preset.id === wanted)
-    if (found === undefined) {
-      throw new UnknownPresetError(wanted, presets.map(preset => preset.id))
-    }
-    return found
+    return await this.withStablePresets([wanted], async () => await this.resolveCommitted(wanted))
+  }
+
+  /**
+   * Resolve a preset through one Creator agent's private candidate overlay.
+   * @param agentCtx - the Creator agent whose candidate may satisfy the id.
+   * @param id - the preset id, or `undefined` for {@link defaultId}.
+   * @returns the candidate for its target id, otherwise the committed preset.
+   * @throws when neither the overlay nor the committed roster supplies the id.
+   */
+  async resolveFor(agentCtx: Context, id?: string): Promise<AgentPreset> {
+    const wanted = id ?? this.defaultId
+    const overlay = this.authoringOverlay(agentCtx)
+    if (overlay?.id === wanted) return overlay
+    return await this.resolve(wanted)
   }
 
   /**
@@ -230,8 +320,12 @@ export class AgentPresets extends Service {
    * @returns the resolved, mountable preset.
    * @throws when the preset is unknown or discovery reports it broken.
    */
-  private async resolveMountable(id?: string): Promise<AgentPreset> {
-    const preset = await this.resolve(id)
+  private async resolveMountable(id: string): Promise<AgentPreset> {
+    return this.assertMountable(await this.resolveCommitted(id))
+  }
+
+  /** Refuse a discovery-reported broken preset before asking the Loader to mount it. */
+  private assertMountable(preset: AgentPreset): AgentPreset {
     if (preset.broken !== undefined) {
       throw new PresetMountError(preset.id, preset.broken)
     }
@@ -260,6 +354,52 @@ export class AgentPresets extends Service {
   private readonly bindings = new WeakMap<ScopeKey, ScopeParentBinding>()
 
   /**
+   * Candidate compositions visible only to the Creator agent authoring them.
+   *
+   * The key is the Creator's exact agent scope rather than a preset id: the
+   * committed roster may keep serving the same id while one route edits and
+   * validates a private copy. Weak ownership plus the registered agent effect
+   * prevents a terminated Creator from leaving a candidate addressable.
+   */
+  private readonly authoringOverlays = new WeakMap<ScopeKey, AgentPreset>()
+
+  /** Resolve the exact scope key required by every authoring-overlay method. */
+  private authoringScope(agentCtx: Context): ScopeKey {
+    const key = scopeOf(agentCtx)
+    if (key === undefined) {
+      throw new Error('agent-presets: an authoring overlay requires a scoped agent context')
+    }
+    return key
+  }
+
+  /** Read the candidate registered for one Creator, when it has one. */
+  private authoringOverlay(agentCtx: Context): AgentPreset | undefined {
+    return this.authoringOverlays.get(this.authoringScope(agentCtx))
+  }
+
+  /**
+   * Register one private candidate composition for a Creator agent.
+   *
+   * The candidate normally has the target preset's id and a path under the
+   * route's private workspace. Only the explicit `*For(agentCtx)` methods read
+   * it; ordinary roster methods continue to address committed files.
+   * @param agentCtx - the Creator agent that owns the candidate.
+   * @param preset - the candidate preset identity and composition path.
+   * @returns an idempotent disposer that removes this exact registration.
+   * @throws when the context is unscoped or already owns a candidate.
+   */
+  registerAuthoringOverlay(agentCtx: Context, preset: AgentPreset): () => Promise<void> {
+    const key = this.authoringScope(agentCtx)
+    if (this.authoringOverlays.has(key)) {
+      throw new Error('agent-presets: this Creator already has an authoring candidate')
+    }
+    this.authoringOverlays.set(key, preset)
+    return agentCtx.effect(() => () => {
+      if (this.authoringOverlays.get(key) === preset) this.authoringOverlays.delete(key)
+    }, `agentPresets.authoringOverlay(${JSON.stringify(preset.id)})`)
+  }
+
+  /**
    * Compose one agent from a preset: ensure the preset's standing mount, then
    * parent the agent's scope key to it so the mount's registrations and
    * listeners cover this agent.
@@ -277,14 +417,52 @@ export class AgentPresets extends Service {
     if (agentKey === undefined) {
       throw new Error('agent-presets: refusing to compose an unscoped context; the scope key is what joins an agent to its preset')
     }
-    const preset = await this.resolveMountable(id)
-    const standing = await this.ensureStanding(preset)
-    // The one bind of this agent's ancestry. The binding is the only re-link
-    // authority, held privately so nothing outside this roster can move a
-    // composed agent to another preset; a later recompose layer re-links
-    // through it under the caller-owned blank-session contract.
-    this.bindings.set(agentKey, bindScopeParent(agentKey, standing.key))
-    return preset
+    const wanted = id ?? this.defaultId
+    return await this.withStablePresets([wanted], async () => {
+      const preset = await this.resolveMountable(wanted)
+      const standing = await this.ensureStanding(preset)
+      // The one bind of this agent's ancestry. The binding is the only re-link
+      // authority, held privately so nothing outside this roster can move a
+      // composed agent to another preset; a later recompose layer re-links
+      // through it under the caller-owned blank-session contract.
+      this.bindings.set(agentKey, bindScopeParent(agentKey, standing.key))
+      return preset
+    })
+  }
+
+  /**
+   * Compose one fresh verification agent from a candidate without publishing a
+   * standing generation.
+   *
+   * The candidate receives an independent composition scope that is parented
+   * only to this agent and disposed with it. It therefore exercises the same
+   * Loader and scope checks as a real Session while remaining unreachable to
+   * sessions on the committed preset id.
+   * @param agentCtx - the fresh verification agent's scope context.
+   * @param preset - the exact candidate composition to mount.
+   * @returns the candidate that was composed.
+   * @throws when the agent is unscoped, already composed, or the candidate is unusable.
+   */
+  async mountIsolated(agentCtx: Context, preset: AgentPreset): Promise<AgentPreset> {
+    const agentKey = scopeOf(agentCtx)
+    if (agentKey === undefined) {
+      throw new Error('agent-presets: refusing to compose an unscoped verification context')
+    }
+    if (this.bindings.has(agentKey)) {
+      throw new Error('agent-presets: refusing to replace an already composed verification agent')
+    }
+    this.assertMountable(preset)
+    const key: ScopeKey = { agentPresetCandidate: preset.id }
+    const scope = createScope(this.selfCtx, key)
+    try {
+      await mountPreset(scope.ctx, preset)
+      this.bindings.set(agentKey, bindScopeParent(agentKey, key))
+      agentCtx.effect(() => () => scope.dispose(), `agentPresets.isolatedMount(${JSON.stringify(preset.id)})`)
+      return preset
+    } catch (error) {
+      await scope.dispose()
+      throw error
+    }
   }
 
   /**
@@ -359,7 +537,43 @@ export class AgentPresets extends Service {
    * @throws when no configured root supplies that id.
    */
   async read(id: string): Promise<string> {
-    return await readComposition(await this.resolve(id))
+    return await this.withStablePresets([id], async () => await readComposition(await this.resolveCommitted(id)))
+  }
+
+  /**
+   * Read a composition through one Creator agent's private candidate overlay.
+   * @param agentCtx - the Creator agent whose candidate may satisfy the id.
+   * @param id - the preset id.
+   * @returns the selected composition exactly as stored.
+   */
+  async readFor(agentCtx: Context, id: string): Promise<string> {
+    const overlay = this.authoringOverlay(agentCtx)
+    if (overlay?.id === id) return await readComposition(overlay)
+    return await this.read(id)
+  }
+
+  /**
+   * Mount-validate a preset as seen by one Creator agent.
+   *
+   * The candidate target is mounted in a disposable one-shot scope so neither
+   * success nor failure enters the committed standing cache. Other ids retain
+   * the ordinary standing-validation behavior.
+   * @param agentCtx - the Creator agent whose candidate may satisfy the id.
+   * @param id - the preset id to validate.
+   */
+  async validateFor(agentCtx: Context, id: string): Promise<void> {
+    const overlay = this.authoringOverlay(agentCtx)
+    if (overlay === undefined || overlay.id !== id) {
+      await this.standingKeyFor(id)
+      return
+    }
+    const preset = this.assertMountable(await this.resolveFor(agentCtx, id))
+    const validation = createScope(this.selfCtx, { agentPresetCandidateValidation: preset.id })
+    try {
+      await mountPreset(validation.ctx, preset)
+    } finally {
+      await validation.dispose()
+    }
   }
 
   /**
@@ -378,18 +592,40 @@ export class AgentPresets extends Service {
    * or the deployment configures no writable root.
    */
   async copy(from: string, id: string, name?: string): Promise<void> {
-    const source = await this.resolve(from)
-    // The roster check refuses ids any root supplies — shipped ones included,
-    // since a user directory named like a shipped preset is shadowed by it.
-    // The disk check inside copyComposition only sees the writable root.
-    if ((await this.list()).some(preset => preset.id === id)) {
-      throw new PresetExistsError(id)
+    await this.withStablePresets([from, id], async () => {
+      const source = await this.resolveCommitted(from)
+      // The roster check refuses ids any root supplies — shipped ones included,
+      // since a user directory named like a shipped preset is shadowed by it.
+      // The disk check inside copyComposition only sees the writable root.
+      if ((await this.discoverCommitted()).some(preset => preset.id === id)) {
+        throw new PresetExistsError(id)
+      }
+      await copyComposition(this.resolvedRoots, source, id, name)
+      // A settled mount under this id can only be stale (its preset was deleted
+      // from disk outside `remove`); the new preset must not inherit it. Every
+      // session already joined keeps the generation it runs on regardless.
+      this.standing.delete(id)
+    })
+  }
+
+  /**
+   * Copy through a Creator agent, refusing writes while it owns a route
+   * candidate because that candidate is the route's only authoring target.
+   * @param agentCtx - the executing Creator agent.
+   * @param from - the committed source preset id.
+   * @param id - the new preset id.
+   * @param name - optional display name.
+   * @throws when the Creator owns an authoring overlay.
+   */
+  async copyFor(agentCtx: Context, from: string, id: string, name?: string): Promise<void> {
+    const overlay = this.authoringOverlay(agentCtx)
+    if (overlay !== undefined) {
+      throw new Error(
+        `agent-presets: preset_copy is unavailable while authoring candidate "${overlay.id}"; `
+        + 'edit the candidate returned by preset_resolve instead',
+      )
     }
-    await copyComposition(this.resolvedRoots, source, id, name)
-    // A settled mount under this id can only be stale (its preset was deleted
-    // from disk outside `remove`); the new preset must not inherit it. Every
-    // session already joined keeps the generation it runs on regardless.
-    this.standing.delete(id)
+    await this.copy(from, id, name)
   }
 
   /**
@@ -398,21 +634,23 @@ export class AgentPresets extends Service {
    * @throws when the preset is unknown or ships with the deployment.
    */
   async remove(id: string): Promise<void> {
-    await deleteComposition(this.resolvedRoots, await this.resolve(id))
-    // Sessions on the deleted preset keep their standing mount; only new
-    // sessions see the roster without it.
-    this.standing.delete(id)
-    // Storing a default that does not exist YET is deliberate — the roster is a
-    // live directory, so a name absent now may exist by the time a session asks
-    // for it, and `resolve` reports it then. A default this call just deleted is
-    // not that case: nothing will ever supply it again, and left in place every
-    // session created without an explicit pick would fail to start. Clearing it
-    // exposes the deployment's own default underneath, which is the layering.
-    if (this.settings?.get().default !== id) return
-    await this.settingsService?.mutate(
-      settingsNamespace(SETTINGS_NAMESPACE),
-      [{ op: 'unset', path: ['default'] }],
-    )
+    await this.withStablePresets([id], async () => {
+      await deleteComposition(this.resolvedRoots, await this.resolveCommitted(id))
+      // Sessions on the deleted preset keep their standing mount; only new
+      // sessions see the roster without it.
+      this.standing.delete(id)
+      // Storing a default that does not exist YET is deliberate — the roster is a
+      // live directory, so a name absent now may exist by the time a session asks
+      // for it, and `resolve` reports it then. A default this call just deleted is
+      // not that case: nothing will ever supply it again, and left in place every
+      // session created without an explicit pick would fail to start. Clearing it
+      // exposes the deployment's own default underneath, which is the layering.
+      if (this.settings?.get().default !== id) return
+      await this.settingsService?.mutate(
+        settingsNamespace(SETTINGS_NAMESPACE),
+        [{ op: 'unset', path: ['default'] }],
+      )
+    })
   }
 
   /**
@@ -460,15 +698,17 @@ export class AgentPresets extends Service {
     if (agentKey === undefined) {
       throw new Error('agent-presets: refusing to recompose an unscoped context')
     }
-    const preset = await this.resolveMountable(id)
-    const standing = await this.ensureStanding(preset)
-    const binding = this.bindings.get(agentKey)
-    if (binding === undefined) {
-      this.bindings.set(agentKey, bindScopeParent(agentKey, standing.key))
-    } else {
-      binding.rebind(standing.key)
-    }
-    return preset
+    return await this.withStablePresets([id], async () => {
+      const preset = await this.resolveMountable(id)
+      const standing = await this.ensureStanding(preset)
+      const binding = this.bindings.get(agentKey)
+      if (binding === undefined) {
+        this.bindings.set(agentKey, bindScopeParent(agentKey, standing.key))
+      } else {
+        binding.rebind(standing.key)
+      }
+      return preset
+    })
   }
 
   /**
@@ -483,8 +723,62 @@ export class AgentPresets extends Service {
    * @throws when the preset is unknown or its composition is unusable.
    */
   async standingKeyFor(id?: string): Promise<ScopeKey> {
-    const preset = await this.resolveMountable(id)
-    return (await this.ensureStanding(preset)).key
+    const wanted = id ?? this.defaultId
+    return await this.withStablePresets([wanted], async () => {
+      const preset = await this.resolveMountable(wanted)
+      return (await this.ensureStanding(preset)).key
+    })
+  }
+
+  /**
+   * Capture one committed composition and its standing runtime generation.
+   *
+   * Resolution, content read, and mount share one preset filesystem operation, so
+   * a Host projection cannot combine composition text from one publication
+   * with registrations from another.
+   * @param id - the preset id, or `undefined` for {@link defaultId}.
+   * @returns preset metadata, composition text, and the matching standing key.
+   * @throws when the preset is unknown or its composition is unusable.
+   */
+  async projectionSnapshot(id?: string): Promise<AgentPresetProjectionSnapshot> {
+    const wanted = id ?? this.defaultId
+    return await this.withStablePresets([wanted], async () => {
+      const preset = await this.resolveMountable(wanted)
+      const composition = await readComposition(preset)
+      const standingKey = (await this.ensureStanding(preset)).key
+      return { preset, composition, standingKey }
+    })
+  }
+
+  /**
+   * Publish one formal preset directory while excluding filesystem readers.
+   *
+   * Whole-roster discovery and operations for `id` finish before `publish`
+   * starts, then wait until it settles. Operations for other preset ids remain
+   * independent. The callback owns the direct filesystem transition and must
+   * not call a formal roster method for the same id while holding this gate;
+   * {@link refreshStanding} is safe to call before it returns.
+   * @param id - preset whose formal directory is replaced.
+   * @param publish - direct, crash-recoverable filesystem publication.
+   * @returns the callback result after every rename has settled.
+   */
+  async runPublication<T>(id: string, publish: () => Promise<T>): Promise<T> {
+    return await this.runFormalFilesystemOperation('roster', async () => {
+      return await this.withStablePresets([id], publish)
+    })
+  }
+
+  /**
+   * Make the next Session compose a new generation of one committed preset.
+   *
+   * Directory-owned capability inputs such as Skill files can change while
+   * the composition file's stamp stays identical. Removing only the pointer
+   * makes the next mount re-read the whole preset directory; agents already
+   * joined to the previous generation keep it and are never disposed here.
+   * @param id - the committed preset id whose next mount must be fresh.
+   */
+  refreshStanding(id: string): void {
+    this.standing.delete(id)
   }
 
   /** Resolve (or create, single-flight) the standing mount of one preset. */
@@ -524,12 +818,16 @@ export class AgentPresets extends Service {
         await mountPreset(scope.ctx, preset)
         return { key, scope, stamp }
       } catch (error) {
-        this.standing.delete(preset.id)
         await scope.dispose()
         throw error
       }
     })()
     this.standing.set(preset.id, created)
+    void created.catch(() => {
+      // A refresh may have removed this pending generation and let a newer
+      // call install its own pointer while this one was still settling.
+      if (this.standing.get(preset.id) === created) this.standing.delete(preset.id)
+    })
     return created
   }
 }

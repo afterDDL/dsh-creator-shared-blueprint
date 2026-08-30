@@ -48,6 +48,9 @@ export interface SeatSessionSummary {
   agentPreset?: string
 }
 
+/** Session-level readiness published while a staged preset is composed. */
+export type AgentPresetSeatReadiness = 'pending' | 'ready' | 'failed'
+
 /** Stages the next session's preset and applies it when one appears. */
 export class AgentPresetSeatController {
   /** Chip snapshot the renderer subscribes to. */
@@ -72,6 +75,8 @@ export class AgentPresetSeatController {
      * refresh. Optional: a harness that renders no list omits it.
      */
     private readonly onApplied?: (sessionId: string, agentPreset: string) => void,
+    /** Publish the prompt-admission state of the receiving session. */
+    private readonly onReadiness?: (sessionId: SessionId, readiness: AgentPresetSeatReadiness) => void,
   ) {}
 
   private set(patch: Partial<AgentPresetSeatState>): void {
@@ -135,6 +140,14 @@ export class AgentPresetSeatController {
     this.set({ current: id, error: null, introduce })
   }
 
+  /**
+   * Read the preset still waiting for a receiving Session.
+   * @returns the staged preset id when present.
+   */
+  pending(): string | undefined {
+    return this.staged
+  }
+
   /** Acknowledge the introduction cue once the chip has played it. */
   introduced(): void {
     if (!this.store.getSnapshot().introduce) return
@@ -149,29 +162,48 @@ export class AgentPresetSeatController {
    * @returns once the switch settled, or immediately when there is nothing to do.
    */
   async apply(): Promise<void> {
+    if (this.store.getSnapshot().busy) return
     const staged = this.staged
     const session = this.currentSession()
     if (staged === undefined || session === undefined) return
     // A started session's history was produced under its own composition; the
     // host refuses the swap, so the stage is no longer meaningful.
-    if (!session.blank || session.agentPreset === staged) {
+    if (session.agentPreset === staged) {
+      this.staged = undefined
+      this.onReadiness?.(session.id, 'ready')
+      return
+    }
+    if (!session.blank) {
       this.staged = undefined
       return
     }
+    this.onReadiness?.(session.id, 'pending')
     this.set({ busy: true, error: null })
     try {
       const response = await this.api.agentPresets.select({ sessionId: session.id, agentPreset: staged })
       this.staged = undefined
       if (!response.result.ok) {
         this.set({ busy: false, error: response.result.error.message, current: this.fallback })
+        this.onReadiness?.(session.id, 'failed')
+        return
+      }
+      if (response.result.value.agentPreset !== staged) {
+        this.set({
+          busy: false,
+          error: `Agent preset mismatch: expected ${JSON.stringify(staged)}, received ${JSON.stringify(response.result.value.agentPreset)}`,
+          current: this.fallback,
+        })
+        this.onReadiness?.(session.id, 'failed')
         return
       }
       // Consumed: the next new session opens on the deployment default again.
       this.set({ busy: false, current: response.result.value.agentPreset })
       this.onApplied?.(session.id, response.result.value.agentPreset)
+      this.onReadiness?.(session.id, 'ready')
     } catch (error) {
       this.staged = undefined
       this.set({ busy: false, error: messageOf(error), current: this.fallback })
+      this.onReadiness?.(session.id, 'failed')
     }
   }
 }

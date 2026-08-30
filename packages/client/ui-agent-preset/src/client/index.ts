@@ -33,12 +33,15 @@ import type { SeatSessionSummary } from './seat-store.ts'
 import { AgentPresetSectionController } from './section-store.ts'
 import { en, zh } from './locales.ts'
 import { AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController } from './settings-store.ts'
+import type { AgentPresetSessionIntent } from './session-intent.ts'
 
 export type { AgentPresetLabelInjected, AgentPresetLabelProps } from './AgentPresetLabel.tsx'
 export type { AgentPresetRowInjected, AgentPresetRowProps } from './AgentPresetRow.tsx'
 export type { AgentPresetSeatInjected, AgentPresetSeatProps } from './AgentPresetSeat.tsx'
 export type { AgentPresetSectionInjected, AgentPresetSectionProps } from './AgentPresetSection.tsx'
 export type { AgentPresetSeatState, SeatSessionSummary } from './seat-store.ts'
+export type { AgentPresetSeatReadiness } from './seat-store.ts'
+export type { AgentPresetSessionIntent } from './session-intent.ts'
 export {
   draftBlocker, type AgentPresetSectionState, type CopyDraft, type PresetRow, type PresetView,
 } from './section-store.ts'
@@ -96,11 +99,25 @@ export function apply(ctx: ClientContext): void {
   // unbound with it, so the section's face reads the current binding per
   // render and simply hides the button while no flow exists.
   let creatorDraft: (() => void) | undefined
+  let activeSeat: AgentPresetSeatController | undefined
+  const sessionIntent: AgentPresetSessionIntent = {
+    stage(presetId, introduce = false) {
+      if (activeSeat === undefined) throw new Error('Agent preset Session seat is not mounted.')
+      activeSeat.stage(presetId, introduce)
+    },
+    pending: () => activeSeat?.pending(),
+  }
+  ctx.effect(() => {
+    const dispose = ctx.reflect.provide('agentPresetSessionIntent', sessionIntent)
+    return () => { void dispose() }
+  }, 'ui-agent-preset: next-Session intent')
 
   // The new-session chip and the header label: one controller, because the
   // staged choice belongs to the flow rather than to any one session.
   ctx.inject(['slots', 'conversation', 'sessions', 'workspaces'], (scope: ClientContext) => {
     const api = (scope.get('connection') as ConnectionHandle).api
+    const t = scope.locale.bind('settings.agentPreset')
+    const readinessSessions = new Set<SeatSessionSummary['id']>()
     const seat = new AgentPresetSeatController(api, (): SeatSessionSummary | undefined => {
       const state = scope.sessions.list.getSnapshot()
       const summary = state.current === undefined ? undefined : state.byId[state.current]
@@ -113,7 +130,18 @@ export function apply(ctx: ClientContext): void {
         }
     }, (sessionId, agentPreset) => {
       scope.sessions.noteAgentPreset(sessionId as never, agentPreset)
+    }, (sessionId, readiness) => {
+      if (readiness === 'ready') {
+        readinessSessions.delete(sessionId)
+        scope.conversation.blocks.set(sessionId, undefined)
+        return
+      }
+      readinessSessions.add(sessionId)
+      scope.conversation.blocks.set(sessionId, {
+        reason: t(readiness === 'pending' ? 'preparingSession' : 'prepareSessionFailed'),
+      })
     })
+    activeSeat = seat
 
     const seatInjected = (): AgentPresetSeatInjected => ({
       hooks: { agentPresetSeat: seat.store },
@@ -176,10 +204,13 @@ export function apply(ctx: ClientContext): void {
         inject: labelInjected,
       }, AgentPresetLabel)
       return () => {
+        for (const sessionId of readinessSessions) scope.conversation.blocks.set(sessionId, undefined)
+        readinessSessions.clear()
         stop()
         settingsMoved()
         presetSelected()
         rosterReaders.delete(readRoster)
+        if (activeSeat === seat) activeSeat = undefined
         creatorDraft = undefined
         chip()
         label()

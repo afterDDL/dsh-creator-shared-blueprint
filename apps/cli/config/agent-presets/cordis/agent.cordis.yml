@@ -240,6 +240,12 @@
 
 # ── self-modification ───────────────────────────────────────────────────────
 
+# Fixed preset authoring verbs consume the host roster and tool registry.
+# Keeping this row in `cordis` makes the schemas available on the Creator's
+# first request without exposing copy or composition reads to ordinary Agents.
+- id: tool-agent-preset-authoring
+  name: '@deepseek-ai/dsh-tool-agent-preset-authoring'
+
 # Read the live runtime, mount a temporary plugin, unmount it. The toolset is a
 # trust boundary, not a sandbox — see this file's header.
 - id: tool-cordis

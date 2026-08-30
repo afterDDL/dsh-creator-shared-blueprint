@@ -17,6 +17,7 @@ export type AgentPresetSettingsKey =
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
   | 'idRequired' | 'idInvalid' | 'idTaken'
   | 'deleteTitle' | 'deleteDescription' | 'deleteConfirm' | 'deleting'
+  | 'preparingSession' | 'prepareSessionFailed'
 
 /** English copy. */
 export const en: Record<AgentPresetSettingsKey, string> = {
@@ -82,6 +83,8 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     'The preset directory is deleted. Sessions already running on it keep working; new sessions cannot select it.',
   deleteConfirm: 'Delete',
   deleting: 'Deleting…',
+  preparingSession: 'Preparing the selected Agent…',
+  prepareSessionFailed: 'This Agent could not be prepared. Select an Agent to try again.',
 }
 
 /** Simplified Chinese copy. */
@@ -139,6 +142,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   deleteDescription: '预设目录将被删除。已在其上运行的会话不受影响；新会话将无法再选择它。',
   deleteConfirm: '删除',
   deleting: '正在删除…',
+  preparingSession: '正在准备所选 Agent…',
+  prepareSessionFailed: 'Agent 准备失败，请重新选择一个 Agent 后再试。',
 }
 
 /** Preset roster fields needed to resolve Web display copy. */

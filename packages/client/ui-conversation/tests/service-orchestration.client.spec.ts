@@ -9,6 +9,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type { QueuedMessage, SessionFace } from '@deepseek-ai/dsh-client-runtime/client'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
+import { ComposerInteractionRegistry } from '../src/client/input/interactions.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
@@ -29,6 +30,7 @@ async function bench(readAttachment?: SessionFace['readAttachment']) {
   const fiber = runtime.ctx.plugin(ConversationController, {
     input: hub,
     blocks: new ComposerBlockRegistry(),
+    interactions: new ComposerInteractionRegistry(),
   })
   await fiber.await()
   const root = runtime.ctx.get('conversation') as ConversationController
@@ -62,6 +64,22 @@ describe('ConversationController', () => {
     } as never)
     await expect(b.scoped.updateQueue('item-1' as never, { kind: 'steer' }))
       .rejects.toThrow('conversation.updateQueue failed: internal: broken')
+    await b.runtime.dispose()
+  })
+
+  it('enforces composer blocks before either send path reaches the Session', async () => {
+    const b = await bench()
+    const sessionId = b.runtime.sessions.behavior('s1').sessionId
+    b.root.blocks.set(sessionId, { reason: '正在准备所选 Agent…' })
+
+    await expect(b.scoped.send('first')).rejects.toThrow('正在准备所选 Agent')
+    const session = b.runtime.sessions.binding('s1')!.session
+    await expect(b.root.sendSession(session, 'first', [], 'queue')).rejects.toThrow('正在准备所选 Agent')
+    expect(b.prompt).not.toHaveBeenCalled()
+
+    b.root.blocks.set(sessionId, undefined)
+    await b.root.sendSession(session, 'first', [], 'queue')
+    expect(b.prompt).toHaveBeenCalledOnce()
     await b.runtime.dispose()
   })
 
@@ -140,6 +158,7 @@ describe('ConversationController', () => {
     await bare.plugin(ConversationController, {
       input: new InputHub(bare, makeTranslate(zh, {})),
       blocks: new ComposerBlockRegistry(),
+      interactions: new ComposerInteractionRegistry(),
     }).await()
     const orphan = bare.get('conversation') as ConversationController
     await expect(orphan.send('x')).rejects.toThrow(/sessions service unavailable/)

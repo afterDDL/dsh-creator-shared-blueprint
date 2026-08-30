@@ -4,7 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { PendingInteraction, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationSlotProps, InputZone } from '../contract/slots.ts'
 import { HeroGlow, HeroShell, WorkspaceChip, workspaceLabel } from './EmptyHero.tsx'
 import css from './ConversationRoot.module.css'
@@ -12,17 +12,37 @@ import css from './ConversationRoot.module.css'
 /** Full props composed from the slot contract. */
 export type ConversationRootProps = ConversationSlotProps
 
+/**
+ * Append externally presented carriers without duplicating a native wait.
+ * @param native - waits owned by the foreground Session.
+ * @param external - exact waits projected from another owning Session.
+ * @returns ordered composer-chain currency with native ownership first.
+ */
+export function composerInteractions(
+  native: readonly PendingInteraction[],
+  external: readonly PendingInteraction[],
+): readonly PendingInteraction[] {
+  if (external.length === 0) return native
+  if (native.length === 0) return external
+  const nativeKeys = new Set(native.map(interaction => `${interaction.sessionId}\u0000${interaction.key}`))
+  const additions = external.filter(interaction => !nativeKeys.has(`${interaction.sessionId}\u0000${interaction.key}`))
+  return additions.length === 0 ? native : [...native, ...additions]
+}
+
 export function ConversationRoot({
   sessionId, useSession, useSessions, useWorkspaces, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
+  useComposerInteractions, renderSlot, renderSlotChain, selectWorkspace, t,
 }: ConversationRootProps) {
   const openState = useSession(s => s.openState)
   const composerPhase = useSession(s => s.composerPhase)
   const pending = useSession(s => s.pending) ?? []
+  const externalInteractions = useComposerInteractions(interactions => interactions)
+  const interactions = composerInteractions(pending, externalInteractions)
   const session = useSession(s => s)
   const inputState = useInput(s => s)
   const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   const summaryBlank = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.blank)
+  const runtimePreset = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.agentPreset)
   const workspaces = useWorkspaces(s => s)
   // A plugin this package cannot import (ui-model-selection) says this session cannot
   // send; its reason is already localized by whoever raised it.
@@ -147,7 +167,7 @@ export function ConversationRoot({
         // block keeps the model seat live because choosing a model is how the
         // user clears it.
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
-        : hero ? { placeholder: t('placeholder.hero') } : {}),
+        : hero ? { placeholder: t(runtimePreset === 'cordis' ? 'placeholder.hero' : 'placeholder.default') } : {}),
     overlay: renderSlot('conversation.input.overlay', {}),
     leftItems: zone === undefined ? null : renderSlot('conversation.input.left', zone),
     rightItems: zone === undefined ? null : renderSlot('conversation.input.right', zone),
@@ -169,7 +189,7 @@ export function ConversationRoot({
   const phase = settling ? 'settling' : hero ? 'hero' : 'active'
   const composer = renderSlotChain(
     'conversation.composer',
-    { interactions: pending, session },
+    { interactions, session },
     { fallback: composerBar, overlay: true },
   )
 

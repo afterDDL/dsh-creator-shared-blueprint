@@ -624,10 +624,9 @@ describe('DetailsPanel Output section', () => {
     expect(view.getByText('该调用不在当前窗口内')).toBeTruthy()
   })
 
-  it('no selection at all renders the guidance line and the default title', () => {
+  it('routes no selection to the default details surface', () => {
     const view = mount(snapshot(), null)
-    expect(view.getByText('详情')).toBeTruthy()
-    expect(view.getByText('点击消息流中的工具行查看详情')).toBeTruthy()
+    expect(view.getByTestId('details-default')).toBeTruthy()
   })
 
   it('a step selection without a callId renders the guidance line too', () => {
@@ -638,6 +637,7 @@ describe('DetailsPanel Output section', () => {
   it('the close button reaches closeDetails', () => {
     localStorage.clear()
     const chat = createChatStore().create()
+    chat.actions.select({ turnSeq: 3, stepSeq: 1 })
     const closeDetails = vi.fn()
     const snap = snapshot()
     const view = render(

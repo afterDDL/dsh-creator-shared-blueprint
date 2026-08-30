@@ -23,15 +23,16 @@ export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 export interface ILayout {
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
   toggleSidebar(): void
-  /** Open the details panel (no-op when already open). */
+  /** Open details; retain a pre-mount request until the root store attaches. No-op when already open. */
   openDetails(): void
-  /** Close the details panel. */
+  /** Close details; supersede any pre-mount open request. */
   closeDetails(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
 export class LayoutController implements ILayout {
   #panels: PanelActions | undefined
+  #pendingDetails: boolean | undefined
 
   /**
    * Adopt the root entry's bound store actions. Called from the root
@@ -42,6 +43,10 @@ export class LayoutController implements ILayout {
    */
   attachPanels(actions: PanelActions): void {
     this.#panels = actions
+    const pending = this.#pendingDetails
+    this.#pendingDetails = undefined
+    if (pending === true) actions.openDetails()
+    else if (pending === false) actions.closeDetails()
   }
 
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
@@ -51,18 +56,18 @@ export class LayoutController implements ILayout {
 
   /** Open the details panel (no-op when already open). */
   openDetails(): void {
-    this.#require().openDetails()
+    if (this.#panels === undefined) this.#pendingDetails = true
+    else this.#panels.openDetails()
   }
 
   /** Close the details panel. */
   closeDetails(): void {
-    this.#require().closeDetails()
+    if (this.#panels === undefined) this.#pendingDetails = false
+    else this.#panels.closeDetails()
   }
 
   #require(): PanelActions {
-    // Callers are UI gestures, which cannot fire before the root entry
-    // rendered (the inject hook runs in its first render) — reaching this
-    // unwired is a boot-order bug, not a race to tolerate.
+    // Sidebar toggles are gestures, unlike details requests from plugin registration.
     if (this.#panels === undefined) throw new Error('layout: panel actions not wired (root entry not mounted)')
     return this.#panels
   }

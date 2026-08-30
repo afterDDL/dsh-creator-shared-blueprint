@@ -6,7 +6,7 @@ import {
   contextForm, contextProvenance, isAppendSurfaceEvent, isReplacementSurfaceEvent,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { InboxState } from './inbox.ts'
-import { chatNode } from './common.ts'
+import { chatNode, hasInternalPresentation } from './common.ts'
 
 type MessageNode = UserMessageNode | SteeringMessageNode | ContextMessageNode
 
@@ -32,7 +32,8 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   kind: 'input-message',
   target: 'chat',
   match: event => event.type === 'user/message'
-    && isAppendSurfaceEvent(event)
+    && (isAppendSurfaceEvent(event)
+      || (isReplacementSurfaceEvent(event) && hasInternalPresentation(event.data.source)))
     && !isCompactionCheckpoint(event)
     ? { id: String(event.data.id), role: 'start' }
     : null,
@@ -71,7 +72,11 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
   update: context => context.state,
   buildViewNode: (context) => {
     if (context.state === undefined) return null
-    return chatNode(context, context.state.kind, context.state.seq, context.state)
+    return chatNode(context, context.state.kind, context.state.seq, context.state, {
+      visibility: context.state.kind === 'context' && hasInternalPresentation(context.state.source)
+        ? 'hidden'
+        : 'visible',
+    })
   },
 }
 

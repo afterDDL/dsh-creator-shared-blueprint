@@ -20,19 +20,21 @@ Underneath all four sat a capability claim: the agent "cannot start one \[a sess
 
 ## Decision
 
+The [fixed Creator-only preset authoring Consumer](2026-08-30-creator-only-preset-authoring-consumer.md) supersedes the temporary self-mounted probe described below. The decision that Creator must validate through the real standing mount, rather than discovery health, remains active.
+
 The skill teaches the agent to mount-validate its own composition through `ctx.agentPresets`, and every remaining example is taken from a shipped composition in the same repository.
 
 `standingKeyFor(id)` is the check. It runs `ensureStanding()` — the same real mount a session start performs, minus the agent — so it rejects a row whose package does not resolve, a row whose config is invalid, a service published into the root realm, and a row that never activated. A failed mount deletes the standing entry and disposes its scope, leaving nothing behind; a successful one installs the standing generation the first real session would have installed anyway. The skill therefore places it as the final check on a finished edit rather than a per-line loop.
 
 The skill states plainly that `list()`'s `broken` field is **not** validation. Discovery's health check proves the file parses in the loader's dialect and holds named rows, and every one of the four failures above passes it.
 
-The agent reaches the roster service the way `cordis_mount` documents: a temporary plugin declaring `inject: ['agentPresets', 'tools']` that registers a tool for itself, because a mount returns only its own acknowledgement and a registered tool is how a service answer reaches the model on the next step. The skill ships that plugin verbatim. `agentPresets` is in the generated `cordis_inspect what:"api"` catalog with full JSDoc, and the sandbox façade gates services on `fiber.inject` alone rather than an allowlist, so nothing about this path is special-cased for the skill.
+The original delivery reached the roster service the way `cordis_mount` documents: a temporary plugin declaring `inject: ['agentPresets', 'tools']` registered a tool for its own composing agent. A mount returns only its acknowledgement, while the registered tool returned the service answer on the next step. The skill shipped that plugin verbatim. `agentPresets` was available through the generated `cordis_inspect what:"api"` catalog with full JSDoc, and the sandbox facade gated services on `fiber.inject` rather than an allowlist, so this path required no skill-specific exception.
 
-`copy(from, id, name)` is named as the authoring write, in place of a shell copy: it validates the id, refuses one any root supplies, rolls a failed copy back, rewrites the copy's `preset.yml`, and runs host-side without sandbox escalation. The escalation guidance stays, moved to where it applies — editing `agent.cordis.yml` afterwards still writes outside the session workspace.
+`copy(from, id, name)` remains the authoring write beneath the fixed Consumer, in place of a shell copy: it validates the id, refuses one any root supplies, rolls a failed copy back, rewrites the copy's `preset.yml`, and runs host-side without sandbox escalation. The escalation guidance applies to editing `agent.cordis.yml` afterwards because that file remains outside the Session workspace.
 
 "Whether a row publishes a service" resolves through `cordis_inspect what:"services"`, which names the owning fiber of every live service.
 
-The guidance keeps `${DSH_HOME:-$HOME/.dsh}/.agent-presets/` as the answer to "where do my presets live" while routing the path an agent actually reads or edits through `list()` or `resolve()`. Stating the path is right for talking to a person and wrong for feeding a file tool: a deployment may configure other roots, and `list()` cannot reveal a user root that holds nothing yet.
+The guidance keeps `${DSH_HOME:-$HOME/.dsh}/.agent-presets/` as the answer to "where do my presets live" while routing the path an agent actually reads or edits through the roster's `list()` or `resolve()` operation. Stating the path is right for talking to a person and wrong for feeding a file tool: a deployment may configure other roots, and `list()` cannot reveal a user root that holds nothing yet.
 
 That path is now a property of the package rather than of one launcher. `AgentPresets` derives `<dshHome>/.agent-presets` as a `user` root unless `includeUserRoot` is false, the way [`dsh-skill-filesystem`](../../../../packages/skill/skill-filesystem/README.md) derives `<dshHome>/skills`, and `apps/cli` supplies only the SHIPPED root — the one path an installed app alone can resolve. The asymmetry it replaces cost a bug: with both roots patched in by one launcher, `dsh run` booted a roster with no roots at all and failed resolving `standard` (fixed then by teaching every launcher the patch). The derived root is appended after every configured root, so a shipped id still shadows a home directory claiming it, and `writableRoot()` still prefers an explicitly configured `user` root. It is resolved once at construction: a root set that changed between a `list()` and the `copy()` acting on its answer would author into a directory the caller never saw.
 
@@ -40,7 +42,7 @@ The prohibition on touching the shipped install is promoted from a paragraph ins
 
 ## Measured behavior
 
-Each row was produced by booting the shipped Web composition and calling the tools through `ctx.tools.execute` on an agent composed from `cordis` — no model in the loop.
+Each row was produced by booting the shipped Web composition and exercising the roster's standing mount on an agent composed from `cordis` — no model in the loop. The fixed Consumer continues to delegate validation to that operation without translating its failures.
 
 | Composition under test | `list()` `broken` | `standingKeyFor()` |
 |---|---|---|
@@ -51,7 +53,7 @@ Each row was produced by booting the shipped Web composition and calling the too
 | consumer row with no provider | empty | `1 row(s) did not activate: … waiting for workflows` |
 | row missing a required config field | empty | `invalid config: $.allowParallelInProgress missing required value` |
 
-The skill's own `cordis_mount` snippet was executed verbatim through the tool registry: it mounts, its `preset_check` tool appears in the composing agent's catalog on the next read, and it answers `mounted OK` for a valid preset and the mount rejection for an invalid one.
+The original `cordis_mount` snippet was executed through the Tool registry: it mounted, exposed `preset_check` to the composing agent on the next catalog read, returned `mounted OK` for a valid preset, and returned the mount rejection for an invalid one. The fixed Consumer Note owns the replacement's first-request verification.
 
 ## Alternatives considered
 
@@ -59,12 +61,12 @@ The skill's own `cordis_mount` snippet was executed verbatim through the tool re
 
 **Teaching `list()`'s `broken` field as the check.** It is the one the settings page shows, so it reads like the intended answer. It passes every failure that matters, and presenting it as validation is what made the original guidance feel complete.
 
-**Adding a first-class preset-validation tool to the preset.** The composed path already exists and is documented by `cordis_mount`'s own schema; a dedicated tool would add a model-facing row to a preset whose point is that the runtime is reachable without one.
+**Adding a first-class preset-validation Tool.** The composed path already existed and was documented by `cordis_mount`; at the time, a dedicated Tool would have added a model-facing row to a preset intended to reach the runtime without one. The fixed Consumer decision supersedes this delivery trade-off after first-request schema stability became a requirement.
 
 ## Consequences
 
 - A successful validation leaves a standing generation that is never reclaimed, which is the [standing-mount](../architecture/2026-08-08-per-preset-standing-mounts.md) cost the roster already carries per generation — the agent pays it once at the end of an edit instead of the user paying it at the first session.
-- The skill now depends on `cordis_inspect`'s generated API catalog staying current for `agentPresets`; `verify-cordis-api` in `doc-sync` is what holds that.
+- The standing-mount validation rule does not depend on how Creator reaches it. The fixed Consumer replaces the temporary Tool registration while preserving the same `standingKeyFor()` result and cleanup behavior.
 - Two examples are now quotations of `standard`'s composition. They drift if that file's `delegation` group changes, which the `web-agent-presets` e2e does not catch.
 - The four corrected statements were the skill's only concrete illustrations of the realm rule. Replacing rather than deleting them keeps the rule teachable; the replacements are verifiable by reading one shipped file.
 

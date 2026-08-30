@@ -8,8 +8,10 @@
  * knows how to render an inert textarea with a placeholder, exactly as it
  * already does for a session with no workspace.
  *
- * This is an affordance, not enforcement: the Host refuses a prompt it cannot
- * route regardless of what any client disables.
+ * The conversation send path enforces the same registry before it serializes
+ * attachments or admits a prompt. The rendered disabled state therefore is
+ * not the only protection against a click or key event already queued in the
+ * browser event loop.
  */
 
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'

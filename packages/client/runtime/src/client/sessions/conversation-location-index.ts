@@ -1,4 +1,5 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import { isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type {
   ConversationEventInput, ConversationLocation, ConversationLocationData,
   ConversationLocationDataStore, ConversationStepDataMap, ConversationTimelineSnapshot,
@@ -92,6 +93,32 @@ function payloadCoordinates(event: SessionEvent): Coordinates {
     ? data.step as number
     : undefined
   return { ...turn === undefined ? {} : { turn }, ...step === undefined ? {} : { step } }
+}
+
+function internalReplacementCoordinates(
+  event: SessionEvent,
+  coordinates: ReadonlyMap<number, Coordinates>,
+): Coordinates | undefined {
+  if (event.type !== 'user/message' || !isReplacementSurfaceEvent(event)) return undefined
+  const source = event.data.source as unknown as { readonly presentation?: unknown }
+  if (source.presentation !== 'internal') return undefined
+  const replaced = coordinates.get(event.surfaceOp.end)
+  return replaced?.turn === undefined ? undefined : replaced
+}
+
+function truncatedPrefixCoordinates(entries: readonly ConversationEventInput[]): Coordinates {
+  for (const { event } of entries) {
+    if (event.type === 'turn/start') return {}
+    const explicit = payloadCoordinates(event)
+    if (explicit.session === true || explicit.turn === undefined) continue
+    if (event.type === 'tool/result') continue
+    if (event.type === 'step/start') return { turn: explicit.turn }
+    return {
+      turn: explicit.turn,
+      ...explicit.step === undefined ? {} : { step: explicit.step },
+    }
+  }
+  return {}
 }
 
 function sameReferences<T>(left: readonly T[], right: readonly T[]): boolean {
@@ -201,14 +228,16 @@ export class ConversationLocationIndex {
   /**
    * Rebuild timeline facts after replace/prepend or a boundary append.
    * @param entries - complete current window in ascending seq order.
+   * @param hasMore - whether the window begins after older durable events.
    * @returns seqs whose resolved Location changed.
    */
-  rebuild(entries: readonly ConversationEventInput[]): ReadonlySet<number> {
+  rebuild(entries: readonly ConversationEventInput[], hasMore = false): ReadonlySet<number> {
     const previousLocations = this.locations
     const turns = new Map<number, TurnDraft>()
     const coordinates = new Map<number, Coordinates>()
-    let currentTurn: number | undefined
-    let currentStep: number | undefined
+    const prefix = hasMore ? truncatedPrefixCoordinates(entries) : {}
+    let currentTurn = prefix.turn
+    let currentStep = prefix.step
 
     const turnDraft = (turn: number, seq: number): TurnDraft => {
       let draft = turns.get(turn)
@@ -234,6 +263,9 @@ export class ConversationLocationIndex {
 
     for (const { event } of entries) {
       const explicit = payloadCoordinates(event)
+      const replaced = explicit.turn === undefined && explicit.session !== true
+        ? internalReplacementCoordinates(event, coordinates)
+        : undefined
       if (event.type === 'turn/start') {
         currentTurn = event.data.turn
         currentStep = undefined
@@ -247,10 +279,10 @@ export class ConversationLocationIndex {
         currentTurn = explicit.turn
         if (explicit.step !== undefined) currentStep = explicit.step
       }
-      const turn = explicit.session === true ? undefined : explicit.turn ?? currentTurn
+      const turn = explicit.session === true ? undefined : explicit.turn ?? replaced?.turn ?? currentTurn
       const step = explicit.session === true || event.type === 'turn/start' || event.type === 'turn/end'
         ? undefined
-        : explicit.step ?? (turn === currentTurn ? currentStep : undefined)
+        : explicit.step ?? replaced?.step ?? (turn === currentTurn ? currentStep : undefined)
       coordinates.set(event.seq, {
         ...turn === undefined ? {} : { turn },
         ...turn === undefined || step === undefined ? {} : { step },
@@ -447,6 +479,15 @@ export class ConversationLocationIndex {
       this.coordinates.set(event.seq, {})
       this.locations.set(event.seq, SESSION_LOCATION)
       return
+    }
+    if (explicit.turn === undefined) {
+      const replaced = internalReplacementCoordinates(event, this.coordinates)
+      if (replaced !== undefined) {
+        this.coordinates.set(event.seq, replaced)
+        this.indexTurnSeq(replaced.turn as number, event.seq)
+        this.locations.set(event.seq, this.resolve(event.seq))
+        return
+      }
     }
     if (explicit.turn !== undefined) {
       if (this.currentTurn !== explicit.turn) this.currentStep = undefined

@@ -25,51 +25,30 @@ Two planes, and the choice is not about how "agent-related" something feels — 
 
 A preset is a directory holding one `agent.cordis.yml`, optionally beside a `preset.yml` carrying display metadata — `name` and `description` (and, for shipped presets, a roster `order`). Write the metadata too: a preset without it shows up in every picker as its bare directory name.
 
-Locally authored presets live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/`, and the shipped set sits beside the deployment's own config. Use those when the user asks where to look. A deployment can configure other roots, so the path you read or edit comes from `list()` or `resolve()` — which is also where `copy()` reports what it just created.
+Locally authored presets live one directory per preset under `${DSH_HOME:-$HOME/.dsh}/.agent-presets/`, and the shipped set sits beside the deployment's own config. Use those when the user asks where to look. A deployment can configure other roots, so the path you read or edit comes from `preset_list` or `preset_resolve` — the same roster where `preset_copy` reports what it created.
 
-## The roster service
+## Built-in preset authoring tools
 
-`ctx.agentPresets` owns discovery, authoring, and mounting. You reach it by mounting a temporary plugin that injects it and registers a tool for yourself — `cordis_mount` returns only the mount acknowledgement, so a registered tool is how a service answer gets back to you, and it becomes callable on your next step.
+The Creator composition supplies five stable tools on its first request. Call them directly; do not inspect the tool registry or generate a temporary plugin that wraps the preset service.
 
-Read `cordis_inspect what:"api" name:"agentPresets"` for the current signatures before writing the code. What this skill relies on:
+- `preset_list` — list every preset with its `id`, `trust` (`system` for the shipped set, `user` for authored ones), and absolute composition `path`.
+- `preset_read` — read one composition by preset id without guessing its filesystem location.
+- `preset_resolve` — resolve one preset id to its authoritative roster metadata and path.
+- `preset_copy` — copy a complete source preset to a new user preset id, with an optional display name; this is the only preset authoring write.
+- `preset_validate` — mount-validate one preset through the same standing composition path used by a new Session.
 
-- `list()` — every preset with its `id`, `trust` (`system` for the shipped set, `user` for authored ones), and the absolute `path` of its composition file. This is how you locate any composition without knowing the install layout; the directory is that path's parent.
-- `read(id)` — one preset's composition text, without a file tool or a path.
-- `copy(from, id, name?)` — the only authoring write (see below).
-- `standingKeyFor(id)` — mount-validate one preset (see below).
-
-```js
-return {
-  name: 'preset-tools',
-  inject: ['agentPresets', 'tools'],
-  apply(ctx) {
-    harness.registerTool(ctx, harness.defineTool({
-      name: 'preset_check',
-      description: 'Mount-validate one preset by id.',
-      parameters: { id: { type: 'string', required: true } },
-      output: { schema: { type: 'string' }, render(_a, v) { return [{ type: 'text', text: v }] } },
-      async execute(args) {
-        try {
-          await ctx.agentPresets.standingKeyFor(args.id)
-          return 'mounted OK'
-        } catch (error) {
-          return error.message
-        }
-      },
-    }))
-  },
-}
-```
-
-Unmount the plugin with `cordis_unmount` when you are done; it is a probe, not a capability to leave behind.
+The normal sequence is `preset_list` → `preset_read` or `preset_resolve` → `preset_copy` → edit the returned user path → `preset_validate`. These tools delegate to the existing preset service, so shipped-preset protection, copy-without-overwrite, user-root placement, and mount validation remain authoritative.
 
 ## Authoring a preset
 
-1. **Start from a copy.** `copy(from, id, name)` copies a whole preset directory into the user root — composition, metadata, skill directories, assets. It validates the id against `[a-z0-9][a-z0-9-]*` (it becomes the directory name, so no leading hyphen), refuses an id any root already supplies, rolls a failed copy back, and rewrites the copy's `preset.yml` to keep the source's description while dropping its name and roster `order`. Prefer it over a shell copy: it needs no sandbox escalation, it lands the copy in whichever root this deployment made writable, and the copy is exactly as loadable as its source. `resolve(id)` then names the file it created — that path, not a guessed one, is what the following edits target. `standard` is the full coding agent and the usual source.
+1. **Start from a copy.** `preset_copy` copies a whole preset directory into the user root — composition, metadata, skill directories, assets. It validates the id against `[a-z0-9][a-z0-9-]*` (it becomes the directory name, so no leading hyphen), refuses an id any root already supplies, rolls a failed copy back, and rewrites the copy's `preset.yml` to keep the source's description while dropping its name and roster `order`. Prefer it over a shell copy: it needs no sandbox escalation, it lands the copy in whichever root this deployment made writable, and the copy is exactly as loadable as its source. `preset_resolve` then names the file it created — that path, not a guessed one, is what the following edits target. `standard` is the full coding agent and the usual source.
 2. **Expect the file sandbox on every edit after the copy.** The user preset root lies outside the session workspace, so under the default `workspace-write` policy the first write there is denied. Only writes are: reading any composition by absolute path needs no escalation. Retry that exact command once with `sandbox_permissions` escalation and a short justification — the user sees and approves it. Batch your writes (one heredoc per file) rather than escalating many small commands. `copy()` itself runs host-side and needs none of this; the edits do.
 3. **Write the copy's `description`** in `preset.yml`, and its `name` if you passed none to `copy()`.
-4. **Edit `agent.cordis.yml`** row by row, keeping the plane rule and the realm rule.
-5. **Mount-validate the result**, then hand off to the user for a real session — both under *Verifying a change*.
+4. **Give the persona stable semantic lines.** Make the first non-empty persona line exactly `角色：<用户级角色>` for a Chinese request or `Role: <user-level role>` for an English request. Give the task its own later line, exactly `目标：<用户级任务>` or `Purpose: <user-level task>`. Keep both on one physical line, in the user's primary language, without `{{model}}`, `{{cwd}}`, environment details, tool instructions, or behavior prose. Replace a copied source persona's old role and task introductions instead of adding competing lines. The lines remain ordinary persona prompt text and are the stable Identity and Purpose sources used by Blueprint write-back and runtime validation.
+5. **Give delivery requirements one semantic Output line.** Add exactly one standalone line `输出：<用户级交付物>` for Chinese or `Output: <user-level deliverable>` for English. Put the concise deliverable on that single physical line; numbered workflow rules and detailed report headings may follow elsewhere. This is the stable Output source used by Blueprint projection and runtime validation. Keep every user-facing semantic line in the request's primary language unless the user asks otherwise; do not append translated role, task, Behavior, or Output glosses in parentheses.
+6. **Audit copied semantic text before accepting it.** A copied preset is only a starting point. Before deciding that no composition edit is needed, inspect the Role, Purpose, numbered Behavior headings, and Output line against the current request language and remove redundant translated glosses inherited from the source. Technical identifiers and established product or standard names may remain unchanged.
+7. **Edit the remaining `agent.cordis.yml` rows** while keeping the plane rule and the realm rule.
+8. **Mount-validate the result**, then hand off to the user for a real session — both under *Verifying a change*.
 
 A composition written from scratch usually forgets a group realm or a consumer row; a copy starts loadable.
 
@@ -104,7 +83,7 @@ Realms are for services a preset owns, not for every group. A host capability th
 
 ## Verifying a change
 
-**`standingKeyFor(id)` is the check.** It composes the preset's plugin subtree for real — the same mount a session start performs, minus the agent — and rejects the four ways a composition fails:
+**`preset_validate` is the check.** It calls the roster's mount validation and composes the preset's plugin subtree for real — the same mount a session start performs, minus the agent — and rejects the four ways a composition fails:
 
 - a row whose package does not resolve (`Cannot find package …`);
 - a row whose config is invalid (`invalid config: $.<field> missing required value`);
@@ -113,7 +92,7 @@ Realms are for services a preset owns, not for every group. A host capability th
 
 It returns normally when the composition mounts. Run it as the final check on a finished edit rather than after every line: a successful mount installs a standing generation that lives until the process exits, while a failed one disposes its subtree and leaves nothing behind.
 
-**Do not treat the roster's `broken` field as validation.** `list()` reports `broken` from a shape check — the file parses in the loader's YAML dialect and holds named rows — which every failure above passes. It catches a damaged file, not an unusable composition.
+**Do not treat the roster's `broken` field as validation.** `preset_list` reports `broken` from a shape check — the file parses in the loader's YAML dialect and holds named rows — which every failure above passes. It catches a damaged file, not an unusable composition.
 
 `cordis_inspect` reports THIS session's composition, so it confirms what a row does in the runtime you are already in, never what your new preset will do.
 

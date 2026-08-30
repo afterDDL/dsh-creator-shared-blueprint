@@ -1,0 +1,68 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`projects Creator working-method rules through the Loader without role boilerplate or unsafe write addresses 1`] = `
+{
+  "behaviorGaps": [
+    {
+      "field": "behavior",
+      "reason": "Real rules without a unique supported ordinal write anchor are projected read-only.",
+    },
+  ],
+  "nodes": [
+    {
+      "adapterRef": "preset:persona.config.text#identity",
+      "editable": true,
+      "id": "identity:persona",
+      "source": "preset",
+      "status": "active",
+      "type": "identity",
+      "value": "上市公司研究分析师",
+    },
+    {
+      "adapterRef": "preset:persona.config.text#purpose",
+      "editable": true,
+      "id": "purpose:persona",
+      "source": "preset",
+      "status": "active",
+      "type": "purpose",
+      "value": "根据本地公司财务资料与公开行业信息，比较公司营收、净利润、PE/PB、增长和行业竞争背景。",
+    },
+    {
+      "adapterRef": null,
+      "editable": false,
+      "id": "output:persona",
+      "source": "preset",
+      "status": "active",
+      "type": "output",
+      "value": "中文研究摘要、指标对比表、结构化结论，并注明来源与日期。",
+    },
+    {
+      "adapterRef": null,
+      "editable": false,
+      "id": "behavior:section:0:0",
+      "source": "preset",
+      "status": "active",
+      "type": "behavior",
+      "value": "开始研究前，先确认研究对象与资料日期；日期不明时先询问用户或如实标注缺失。",
+    },
+    {
+      "adapterRef": null,
+      "editable": false,
+      "id": "behavior:section:0:1",
+      "source": "preset",
+      "status": "active",
+      "type": "behavior",
+      "value": "严格区分事实、推断与缺失数据：本地资料与公开来源中的明确数字记为事实；基于事实的合理判断记为推断并明确标注；无法获取的信息如实标注缺失，绝不编造增长率或其他数据。",
+    },
+    {
+      "adapterRef": null,
+      "editable": false,
+      "id": "behavior:section:0:2",
+      "source": "preset",
+      "status": "active",
+      "type": "behavior",
+      "value": "只呈现研究事实、指标对比与相关背景，不提供任何买入、卖出、持有等投资建议。",
+    },
+  ],
+}
+`;

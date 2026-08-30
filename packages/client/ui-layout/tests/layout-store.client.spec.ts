@@ -55,10 +55,10 @@ describe('createLayoutStore', () => {
     actions.setSidebar(400)
     actions.setNarrow(true)
     actions.toggleSidebar()
-    expect(store.getSnapshot()).toEqual({ sidebar: 400, details: 0, narrow: true, narrowExpanded: true })
+    expect(store.getSnapshot()).toEqual({ sidebar: SIDEBAR_MAX, details: 0, narrow: true, narrowExpanded: true })
     actions.toggleSidebar()
     expect(store.getSnapshot().narrowExpanded).toBe(false)
-    expect(store.getSnapshot().sidebar).toBe(400)
+    expect(store.getSnapshot().sidebar).toBe(SIDEBAR_MAX)
   })
 
   it('crossing the breakpoint drops the override; a same-value setNarrow keeps it', () => {
@@ -99,5 +99,12 @@ describe('createLayoutStore', () => {
       narrow: false,
       narrowExpanded: false,
     })
+  })
+
+  it.each([0, -1, 99999, { version: 0, ratio: 0 }])('ignores obsolete persisted details preference %j', (details) => {
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ details }))
+    const { store, actions } = createLayoutStore().create()
+    actions.openDetails()
+    expect(store.getSnapshot().details).toBe(DETAILS_DEFAULT)
   })
 })

@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-tool-agent-preset-authoring` | `preset_copy`, `preset_list`, `preset_read`, `preset_resolve`, `preset_validate` | `ctx.tools`, `ctx.agentPresets` | `tool/call`, `tool/result`, `a new user preset directory through ctx.agentPresets.copy` | - | The shipped cordis preset mounts these five fixed schemas for Creator Sessions only. All operations delegate to the host preset service; ordinary Agent presets do not receive them. |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`, `ctx.userQuestions` | `tool/call`, `tool/result after a UI/provider answers the question` | - | ask_user_question pauses the tool call until the active UI provider returns a human answer. |
 | `@deepseek-ai/dsh-tools` | `run_code` | `ctx.tools`, `ctx.codeRuntime (execution time)`, `ctx.systemPrompt` | `tool/call`, `one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`, `tool/result` | - | Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode Agent Note). Under `code` it is the registry's only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime's language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result. |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`, `ctx.systemPrompt`, `ctx.userQuestions (execution time, opportunistic)` | `tool/call`, `plan/mode inactive on an approved review`, `tool/result` | - | exit_plan_mode stays in the model-facing schema while planning is inactive so transitions add no tool-catalog churn on top of the plan-policy change. Its execute path rejects calls outside plan mode; in plan mode it presents the plan over the user-questions seam (approve / keep planning with feedback), and approval logs plan mode inactive at the step boundary. |
@@ -39,6 +40,118 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-tool-agent-preset-authoring"></a>
+
+## `@deepseek-ai/dsh-tool-agent-preset-authoring`
+
+### `preset_copy`
+
+Create a new user Agent preset by copying an existing preset directory whole. The new id must not already exist; this is the only preset authoring write.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "string",
+      "description": "Source preset id."
+    },
+    "id": {
+      "type": "string",
+      "description": "New lowercase preset id using letters, digits, and hyphens."
+    },
+    "name": {
+      "type": "string",
+      "description": "Optional display name for the new preset."
+    }
+  },
+  "required": [
+    "from",
+    "id"
+  ]
+}
+```
+
+Source: [`packages/preset/tool-agent-preset-authoring/src/index.ts`](../packages/preset/tool-agent-preset-authoring/src/index.ts)
+
+### `preset_list`
+
+List every available Agent preset. Use this directly before choosing a reference preset; do not inspect the Tool registry first.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/preset/tool-agent-preset-authoring/src/index.ts`](../packages/preset/tool-agent-preset-authoring/src/index.ts)
+
+### `preset_read`
+
+Read one Agent preset composition exactly as stored, addressed by preset id.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Preset id from preset_list."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/preset/tool-agent-preset-authoring/src/index.ts`](../packages/preset/tool-agent-preset-authoring/src/index.ts)
+
+### `preset_resolve`
+
+Resolve one Agent preset id to its authoritative roster metadata and composition path.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Preset id to resolve."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/preset/tool-agent-preset-authoring/src/index.ts`](../packages/preset/tool-agent-preset-authoring/src/index.ts)
+
+### `preset_validate`
+
+Mount-validate one finished Agent preset through the same standing composition path used by a new Session.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Preset id to mount-validate."
+    }
+  },
+  "required": [
+    "id"
+  ]
+}
+```
+
+Source: [`packages/preset/tool-agent-preset-authoring/src/index.ts`](../packages/preset/tool-agent-preset-authoring/src/index.ts)
+
+The shipped cordis preset mounts these five fixed schemas for Creator Sessions only. All operations delegate to the host preset service; ordinary Agent presets do not receive them.
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
 

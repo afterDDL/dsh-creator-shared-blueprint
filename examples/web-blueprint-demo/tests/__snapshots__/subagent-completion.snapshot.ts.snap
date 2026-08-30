@@ -1,0 +1,63 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`settles mounted Subagent authoring through the Loader without Try or a foreground Creator 1`] = `
+{
+  "activeBeforeCreatorEnd": "active",
+  "baseline": [],
+  "binding": "pass",
+  "businessTurns": 0,
+  "conformance": "pass",
+  "delegationEvidence": [
+    {
+      "nodeId": "capability:delegation:industry-research",
+      "provider": "spawn",
+      "providerAvailable": true,
+      "rowId": "industry-research",
+      "status": "pass",
+      "tool": "industry_research",
+    },
+  ],
+  "delta": [
+    {
+      "configDigest": "96e05638ea04dbf5e36a735b300d7890efdb022a90c5e73e3fc57346a876e4f2",
+      "enabled": true,
+      "mode": "one-shot",
+      "provider": "spawn",
+      "providerAvailable": true,
+      "rowId": "industry-research",
+      "tool": "industry_research",
+    },
+  ],
+  "duplicateSameTerminal": true,
+  "kind": "subagent",
+  "outcome": "completed",
+  "projection": [
+    {
+      "adapterRef": null,
+      "editable": false,
+      "id": "capability:delegation:industry-research",
+      "source": "preset",
+      "status": "active",
+      "type": "capability",
+      "value": {
+        "enabled": true,
+        "kind": "delegation",
+        "mode": "one-shot",
+        "name": "industry research Collaborating Agent",
+        "provider": "spawn",
+        "providerAvailable": true,
+        "responsibility": "You are Industry Research. Compare public industry sources.",
+        "tool": "industry_research",
+      },
+    },
+  ],
+  "recoveredEndSeq": 3,
+  "state": "ended",
+  "target": "research",
+  "terminalCount": 1,
+  "terminalSeq": 3,
+  "verificationAgentReleased": true,
+  "verificationEvidenceOwnsSession": true,
+  "verificationSessionCount": 1,
+}
+`;

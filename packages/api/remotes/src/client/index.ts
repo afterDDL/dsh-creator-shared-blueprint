@@ -6,6 +6,7 @@ import goalsRemote from '@deepseek-ai/dsh-goal/remote'
 import dynamicRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
 import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
+import blueprintRemote from '@deepseek-ai/dsh-blueprint-adapter/remote'
 import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 
 export type { TypertClientRemote as ClientRemote } from '@deepseek-ai/dsh-typert-protocol'
@@ -14,6 +15,23 @@ export type {} from '@deepseek-ai/dsh-commands/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
 export type {} from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 export type {} from '@deepseek-ai/dsh-message-feedback/remote'
+export type {} from '@deepseek-ai/dsh-blueprint-adapter/remote'
+export type {
+  Blueprint, BlueprintApplyChangeSetRequest, BlueprintApplyChangeSetResult, BlueprintApplyChangeSetStatus, BlueprintApplyReceipt,
+  BlueprintCancelChangeSetRequest, BlueprintCapabilityAuthoringKind, BlueprintCapabilityAuthoringRoute,
+  BlueprintChangeOperation, BlueprintChangeReceipt,
+  BlueprintChangeProposal, BlueprintChangeSet, BlueprintChangeSetCapabilityOperation,
+  BlueprintChangeSetOperation, BlueprintChangeSetTextOperation, BlueprintConformanceStatus,
+  BlueprintConversationContextRequest,
+  BlueprintConversationContextResult, BlueprintCreatorAuthoringEvent, BlueprintCreatorAuthoringRoute,
+  BlueprintGetRequest, BlueprintNode,
+  BlueprintImpactCandidate, BlueprintImpactEvidence, BlueprintPromptEvidence,
+  BlueprintProposalCancellation, BlueprintProposalValue, BlueprintRuntimeDelegation, BlueprintRuntimeSkill, BlueprintSessionBindingEvidence,
+  BlueprintDelegationEvidence, BlueprintSessionValidation, BlueprintSkillEvidence,
+  BlueprintStructuredEdit, BlueprintStructuredEditInput,
+  BlueprintToolEvidence, BlueprintUserChange, BlueprintUserChangeInput,
+  BlueprintUserChangeOperation, BlueprintValidateSessionRequest,
+} from '@deepseek-ai/dsh-blueprint-adapter/types'
 // The forwarded-event allowlist's selection seat: without it in the consumer's
 // compilation face `TypertRemoteEvent` is `never` and every `$on` call fails.
 export type { ApiRemoteForwardedEvent } from '../types.ts'
@@ -107,6 +125,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   try {
     for (const contribution of [
       commandsRemote, goalsRemote, dynamicRemote, pluginInventoryRemote, messageFeedbackRemote,
+      blueprintRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

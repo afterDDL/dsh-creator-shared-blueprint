@@ -20,6 +20,7 @@ import type {} from '@deepseek-ai/dsh-tools'
 // Type-only: resolves `ctx.get('sessionProjections')` and `ctx.get('tokenMeter')`.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-blueprint-adapter'
 
 const CONFIG_DIR = fileURLToPath(new URL('../config/', import.meta.url))
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
@@ -30,6 +31,9 @@ const WEB_PATCH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
 const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 const EXAMPLES_INSTALL_ANCHOR = join(REPO_ROOT, 'examples/package.json')
 const MINIMAL_PROMPT = 'You are a helpful software engineer assistant.'
+const CREATOR_PRESET_TOOLS = [
+  'preset_copy', 'preset_list', 'preset_read', 'preset_resolve', 'preset_validate',
+]
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
 * You don't have access to the internet via this tool.
@@ -158,6 +162,193 @@ beforeAll(async () => {
 }, 120_000)
 
 describe('the shipped Web composition', () => {
+  it('projects a shipped preset from its standing runtime assembly', async () => {
+    const blueprint = await ctx.blueprintAdapter.read('standard')
+
+    expect(blueprint.preset).toMatchObject({ id: 'standard', trust: 'system' })
+    expect(blueprint.runtime.tools).toContain('web_search')
+    expect(blueprint.runtime.tools).not.toContain('web_fetch')
+    expect(blueprint.runtime.promptSections).toEqual(expect.arrayContaining([
+      'harness:identity', 'deployment:persona', 'tool:web_search',
+    ]))
+    expect(blueprint.runtime.permissions).toEqual({
+      preset: 'workspace-write', sandbox: 'workspace-write', approval: 'ask',
+    })
+    expect(blueprint.nodes).toContainEqual(expect.objectContaining({
+      id: 'capability:web-fetch', source: 'preset', status: 'inactive', editable: false,
+    }))
+    expect(blueprint.nodes).toContainEqual(expect.objectContaining({
+      id: 'access:permission-preset', source: 'inherited', editable: false,
+    }))
+  })
+
+  it('projects a newly created session through the exact agent assembly and pinned permissions', async () => {
+    const expected = await ctx.blueprintAdapter.read('standard')
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('blueprint-standard-session'),
+      meta: { agentPreset: 'standard' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    try {
+      const blueprint = await ctx.blueprintAdapter.read('standard', { agent: handle.agent })
+
+      expect(blueprint.runtime.tools).toEqual(toolNames(ctx, handle.agent))
+      expect(blueprint.runtime.permissions).toEqual({
+        preset: 'workspace-write', sandbox: 'workspace-write', approval: 'ask',
+      })
+      expect(handle.agent.session.events.map(event => event.type)).toEqual(expect.arrayContaining([
+        'permission/preset', 'sandbox/mode', 'approval/policy',
+      ]))
+      const validation = await ctx.blueprintAdapter.validateSession({
+        sessionId: handle.agent.session.id,
+        presetId: 'standard',
+        expectedRevision: expected.revision,
+      })
+      expect(validation.valid).toBe(true)
+      expect(validation.binding).toMatchObject({
+        status: 'pass', sessionPresetId: 'standard', composedPresetId: 'standard',
+        expectedRevision: expected.revision, projectedRevision: expected.revision,
+      })
+      expect(validation.tools).toMatchObject({ status: 'pass', missing: [], unexpected: [], schemaMismatches: [] })
+      const actualTools = new Set(toolNames(ctx, handle.agent))
+      for (const evidence of validation.tools.evidence) {
+        expect(evidence.actualPresent).toBe(actualTools.has(evidence.tool))
+        expect(evidence.status).toBe('pass')
+        if (evidence.expectedEnabled) {
+          expect(evidence.expectedSchemaDigest).toMatch(/^[a-f0-9]{64}$/u)
+          expect(evidence.liveSchemaDigest).toBe(evidence.expectedSchemaDigest)
+        }
+      }
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('scopes Blueprint conversation context and the preview-only proposal Tool to one live Session', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('blueprint-conversation-context'),
+      meta: { agentPreset: 'standard' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    try {
+      const blueprint = await ctx.blueprintAdapter.read('standard')
+      const selectedNodeId = 'capability:web-search'
+
+      await ctx.blueprintAdapter.setConversationContext({
+        sessionId: handle.agent.session.id,
+        presetId: 'standard',
+        revision: blueprint.revision,
+        selectedNodeId,
+      })
+
+      expect(toolNames(ctx, handle.agent)).toContain('propose_blueprint_change')
+      expect(toolNames(ctx, handle.agent)).toContain('route_blueprint_capability_authoring')
+      expect(toolNames(ctx, handle.agent)).toContain('route_blueprint_creator_authoring')
+      expect(toolNames(ctx)).not.toContain('propose_blueprint_change')
+      const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      expect(assembly.contexts.find(context => context.name === 'blueprint:conversation')?.text)
+        .toContain(`Selected node: ${selectedNodeId}. Selection is context, not mode.`)
+      expect((await ctx.blueprintAdapter.validateSession({
+        sessionId: handle.agent.session.id,
+        presetId: 'standard',
+        expectedRevision: blueprint.revision,
+      })).valid).toBe(true)
+
+      await ctx.blueprintAdapter.setConversationContext({ sessionId: handle.agent.session.id })
+
+      expect(toolNames(ctx, handle.agent)).not.toContain('propose_blueprint_change')
+      expect(toolNames(ctx, handle.agent)).not.toContain('route_blueprint_capability_authoring')
+      expect(toolNames(ctx, handle.agent)).not.toContain('route_blueprint_creator_authoring')
+      expect((await ctx.systemPrompt.assemble({ scope: handle.agent })).contexts)
+        .not.toContainEqual(expect.objectContaining({ name: 'blueprint:conversation' }))
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('isolates Creator authoring from existing-Agent proposal context until Ready', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('blueprint-creator-authoring'),
+      meta: { agentPreset: 'cordis' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+    })
+    try {
+      const prior = await ctx.blueprintAdapter.read('standard')
+      await ctx.blueprintAdapter.setConversationContext({
+        sessionId: handle.agent.session.id,
+        presetId: 'standard',
+        revision: prior.revision,
+      })
+      expect(toolNames(ctx, handle.agent)).toContain('propose_blueprint_change')
+      expect(toolNames(ctx, handle.agent)).toContain('route_blueprint_capability_authoring')
+      expect(toolNames(ctx, handle.agent)).toContain('route_blueprint_creator_authoring')
+
+      await ctx.blueprintAdapter.setConversationContext({
+        sessionId: handle.agent.session.id,
+        creatorDraft: {
+          name: '课程资料整理测试 Agent',
+          status: 'waiting',
+          targetPresetId: 'standard',
+          selectedNodeId: 'capability:web-search',
+        },
+      })
+
+      expect(toolNames(ctx, handle.agent)).not.toContain('propose_blueprint_change')
+      const authoring = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      const context = authoring.contexts.find(candidate => candidate.name === 'blueprint:conversation')?.text
+      expect(context).toContain('Draft Agent: 课程资料整理测试 Agent. Coordinator status: waiting.')
+      expect(context).toContain('Associated target preset: standard.')
+      expect(context).toContain('"id":"capability:web-search","type":"capability","label":"Web Search"')
+      expect(context).toContain('Selection is context, not mode.')
+      expect(context).toContain('treat it as Creator steering for the associated target preset')
+      expect(context).toContain('Structured answers returned by ask_user_question are normal Creator authoring input.')
+      expect(context).not.toContain('Projection revision:')
+
+      await ctx.blueprintAdapter.setConversationContext({
+        sessionId: handle.agent.session.id,
+        presetId: 'standard',
+        revision: prior.revision,
+      })
+
+      expect(toolNames(ctx, handle.agent)).toContain('propose_blueprint_change')
+      expect((await ctx.systemPrompt.assemble({ scope: handle.agent })).contexts
+        .find(candidate => candidate.name === 'blueprint:conversation')?.text)
+        .toContain('Target preset: standard')
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('assembles a Japanese typed Creator task without relabeling it as English', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('blueprint-japanese-creator-authoring'),
+      meta: { agentPreset: 'cordis' },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+    })
+    try {
+      const request = '上場AI企業を調査するエージェントを作ってください。'
+      await ctx.blueprintAdapter.setConversationContext({
+        sessionId: handle.agent.session.id,
+        creatorAuthoring: {
+          routeId: 'route-ja', sourceSessionId: 'source-ja',
+          request, name: '上場AI企業リサーチ Agent', sourceLanguage: 'ja',
+        },
+      })
+
+      const context = (await ctx.systemPrompt.assemble({ scope: handle.agent })).contexts
+        .find(candidate => candidate.name === 'blueprint:conversation')?.text
+      expect(context).toContain(`Original user request: ${request}`)
+      expect(context).toContain('Source language metadata: ja.')
+      expect(context).toContain('without defaulting to English')
+      const authoring = handle.agent.session.events.find(event => event.type === 'blueprint/creator-authoring')
+      expect(authoring?.type).toBe('blueprint/creator-authoring')
+      if (authoring?.type !== 'blueprint/creator-authoring') throw new Error('Expected Creator authoring event')
+      expect(authoring.data).toMatchObject({ operation: 'create-agent', routeId: 'route-ja', sourceLanguage: 'ja' })
+    } finally {
+      await handle.dispose()
+    }
+  })
+
   it('leaves the global tool layer empty', () => {
     // Every model-facing tool belongs to a preset, `ask_user_question`
     // included: a tool in the global layer reaches EVERY agent regardless of
@@ -294,6 +485,20 @@ describe('the shipped Web composition', () => {
     }
   })
 
+  it('exposes fixed preset authoring schemas on the first Creator assembly', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-cordis-authoring-schemas'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+    })
+    try {
+      const firstAssembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+      expect(firstAssembly.tools.map(tool => tool.name)).toEqual(expect.arrayContaining(CREATOR_PRESET_TOOLS))
+      expect(firstAssembly.tools.map(tool => tool.name)).not.toContain('preset_check')
+    } finally {
+      await handle.dispose()
+    }
+  })
+
   it('presents `code` as Code Mode without disturbing a native session beside it', async () => {
     const coded = await ctx.agents.create({
       sessionId: SessionId('preset-code'),
@@ -334,6 +539,7 @@ describe('the shipped Web composition', () => {
     try {
       // Editing the live runtime is opt-in per session, not ambient.
       expect(toolNames(ctx, handle.agent)).not.toContain('cordis_define')
+      for (const tool of CREATOR_PRESET_TOOLS) expect(toolNames(ctx, handle.agent)).not.toContain(tool)
     } finally {
       await handle.dispose()
     }
@@ -346,7 +552,15 @@ describe('the shipped Web composition', () => {
       CONFIG_DIR, 'agent-presets', 'cordis', 'skills', 'editing-cordis-compositions', 'SKILL.md',
     )
 
-    expect((await readFile(skill, 'utf8')).startsWith('---\nname: editing-cordis-compositions')).toBe(true)
+    const source = await readFile(skill, 'utf8')
+    expect(source.startsWith('---\nname: editing-cordis-compositions')).toBe(true)
+    expect(source).toContain('`preset_list` → `preset_read` or `preset_resolve` → `preset_copy`')
+    expect(source).toContain('→ `preset_validate`')
+    expect(source).toContain('`角色：<用户级角色>`')
+    expect(source).toContain('`Role: <user-level role>`')
+    expect(source).toContain('without `{{model}}`, `{{cwd}}`')
+    expect(source).not.toContain('preset_check')
+    expect(source).not.toContain('listTools')
   })
 
   it('merges the global skill layer into a preset agent\'s catalog, keeping local discovery preset-side', async () => {
@@ -727,19 +941,22 @@ describe('authoring a preset on the shipped composition', () => {
     userRoot = join(await mkdtemp(join(tmpdir(), 'dsh-preset-authoring-')), 'profiles')
     const settingsFile = join(await mkdtemp(join(tmpdir(), 'dsh-preset-authoring-settings-')), 'settings.yaml')
     await writeFile(settingsFile, '{}\n')
-    authorCtx = await bootWeb(settingsFile, [{
-      id: 'agent-presets',
-      config: {
-        default: 'standard',
-        roots: [
-          { path: join(CONFIG_DIR, 'agent-presets'), trust: 'system' },
-          // The root does not exist yet: a deployment whose user has authored
-          // nothing is the normal first-run state.
-          { path: userRoot, trust: 'user' },
-        ],
-        includeUserRoot: false,
+    authorCtx = await bootWeb(settingsFile, [
+      { id: 'session-persistence-jsonl', config: { root: join(dirname(settingsFile), 'sessions') } },
+      {
+        id: 'agent-presets',
+        config: {
+          default: 'standard',
+          roots: [
+            { path: join(CONFIG_DIR, 'agent-presets'), trust: 'system' },
+            // The root does not exist yet: a deployment whose user has authored
+            // nothing is the normal first-run state.
+            { path: userRoot, trust: 'user' },
+          ],
+          includeUserRoot: false,
+        },
       },
-    }])
+    ])
   })
 
   it('refuses to copy over or delete a shipped preset', async () => {
@@ -775,6 +992,77 @@ describe('authoring a preset on the shipped composition', () => {
       // The same tools the shipped `minimal` composes, from a directory copied
       // through the service into a root outside the installed harness.
       expect(toolNames(authorCtx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('updates only the safely recognized Identity role slot in a user preset', async () => {
+    const presetId = `identity-write-${randomUUID()}`
+    await authorCtx.agentPresets.copy('standard', presetId, '考研择校 Agent')
+    const beforeComposition = await authorCtx.agentPresets.read(presetId)
+    const before = await authorCtx.blueprintAdapter.read(presetId)
+    const identity = before.nodes.find(node => node.type === 'identity')
+
+    expect(identity).toMatchObject({ id: 'identity:persona', value: 'coding agent', editable: true })
+    const after = await authorCtx.blueprintAdapter.updateIdentity({
+      presetId, revision: before.revision, nodeId: 'identity:persona',
+      expected: 'coding agent', value: '保研申请顾问',
+    })
+    const afterComposition = await authorCtx.agentPresets.read(presetId)
+
+    expect(after.nodes.find(node => node.type === 'identity')).toMatchObject({
+      value: '保研申请顾问', editable: true,
+    })
+    expect(afterComposition).toBe(beforeComposition.replace('You are a coding agent powered', 'You are a 保研申请顾问 powered'))
+    expect((await authorCtx.blueprintAdapter.read(presetId)).revision).toBe(after.revision)
+  })
+
+  it('runs the fixed Creator authoring sequence through the official preset service', async () => {
+    const presetId = `study-selection-${randomUUID()}`
+    const handle = await authorCtx.agents.create({
+      sessionId: SessionId(`preset-authoring-tools-${randomUUID()}`),
+      setup: agentCtx => authorCtx.agentPresets.mount(agentCtx, 'cordis').then(() => undefined),
+    })
+    const execute = async (name: string, args: unknown) => await authorCtx.tools.execute({
+      callId: CallId(`preset-authoring-${name}-${randomUUID()}`),
+      name,
+      arguments: args,
+      signal: new AbortController().signal,
+      agent: handle.agent,
+    })
+
+    try {
+      const listed = await execute('preset_list', {})
+      if (listed.isError) throw new Error(`preset_list failed: ${JSON.stringify(listed.content)}`)
+      expect(listed).toMatchObject({ isError: false })
+      expect(JSON.stringify(listed.value)).toContain('"standard"')
+
+      const read = await execute('preset_read', { id: 'minimal' })
+      expect(read).toMatchObject({ isError: false })
+      expect(JSON.stringify(read.value)).toContain('tool-str-replace-editor')
+
+      const resolved = await execute('preset_resolve', { id: 'minimal' })
+      expect(resolved).toMatchObject({ isError: false, value: { preset: { id: 'minimal', trust: 'system' } } })
+
+      const copied = await execute('preset_copy', {
+        from: 'minimal', id: presetId, name: '留学选校 Agent',
+      })
+      expect(copied).toMatchObject({
+        isError: false,
+        value: { preset: { id: presetId, trust: 'user', name: '留学选校 Agent' } },
+      })
+      expect((await authorCtx.agentPresets.resolve(presetId)).path)
+        .toBe(join(userRoot, presetId, 'agent.cordis.yml'))
+
+      const duplicate = await execute('preset_copy', { from: 'minimal', id: presetId })
+      expect(duplicate.isError).toBe(true)
+      expect(JSON.stringify(duplicate.content)).toContain('already exists')
+
+      const validated = await execute('preset_validate', { id: presetId })
+      expect(validated).toMatchObject({
+        isError: false, value: { id: presetId, status: 'mounted' },
+      })
     } finally {
       await handle.dispose()
     }

@@ -1,0 +1,35 @@
+# Keyless authoring-conformance composition; no LLM provider or business turn.
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+- id: sessions
+  name: '@deepseek-ai/dsh-session'
+- id: prompt
+  name: '@deepseek-ai/dsh-system-prompt'
+  config:
+    persona: ''
+- id: tools
+  name: '@deepseek-ai/dsh-tools'
+- id: skills
+  name: '@deepseek-ai/dsh-skill'
+- id: subagents
+  name: '@deepseek-ai/dsh-subagent'
+- id: agents
+  name: '@deepseek-ai/dsh-agent'
+- id: loop
+  name: '@deepseek-ai/dsh-agent-loop'
+  config:
+    agents: []
+- id: spawn
+  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+  config:
+    providerName: spawn
+- id: presets
+  name: '@deepseek-ai/dsh-agent-presets'
+  config:
+    default: research
+    includeUserRoot: false
+    roots:
+      - path: !!js process.env.DSH_BLUEPRINT_TEST_PRESETS
+        trust: user
+- id: blueprint
+  name: '@deepseek-ai/dsh-blueprint-adapter'

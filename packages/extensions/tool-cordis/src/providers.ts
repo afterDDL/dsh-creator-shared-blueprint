@@ -6,6 +6,14 @@ import type { HostCordisInspectProviderRegistration } from '@deepseek-ai/dsh-cor
 import type { JsonValue } from '@deepseek-ai/dsh-session'
 import { EVENT_API, queryEventApi, queryServiceApi } from './api-catalog.ts'
 
+interface SharedHostProviders {
+  references: number
+  dispose(): void
+}
+
+/** One Host provider set per DSH root, retained by every live tool-cordis instance. */
+const sharedHostProviders = new WeakMap<Context, SharedHostProviders>()
+
 const EMPTY_INPUT = { type: 'object', properties: {}, additionalProperties: false } as const
 const ANY_OUTPUT = { description: 'JSON data owned by this inspect provider.' } as const
 const SERVICE_INPUT = exactInput('service', 'Exact Service key. Omit it for the compact Service and method-signature directory.')
@@ -24,6 +32,7 @@ const HOST_EVENTS = EVENT_API.filter(event => !event.name.startsWith('cordis/'))
  * @returns registrations for static catalogs and live Host capabilities.
  */
 export function hostInspectProviders(ctx: Context): HostCordisInspectProviderRegistration[] {
+  const tools = ctx.tools
   return [
     registration(
       'Service',
@@ -58,10 +67,49 @@ export function hostInspectProviders(ctx: Context): HostCordisInspectProviderReg
       },
       query(method, _input, context) {
         if (method !== 'listTools') throw new Error(`unknown Tool inspect method "${method}"`)
-        return Promise.resolve({ tools: ctx.tools.schemas(context.agent) } as unknown as JsonValue)
+        return Promise.resolve({ tools: tools.schemas(context.agent) } as unknown as JsonValue)
       },
     },
   ]
+}
+
+/**
+ * Retain the process-global Host inspect providers for one tool-cordis instance.
+ * Multiple agent presets share one registration set; the last disposer removes it.
+ * @param ctx - instance context whose root identifies the running DSH application.
+ * @returns idempotent disposer for this instance's reference.
+ */
+export function retainHostInspectProviders(ctx: Context): () => void {
+  const root = ctx.root
+  let shared = sharedHostProviders.get(root)
+  if (shared === undefined) {
+    const disposers: (() => void)[] = []
+    try {
+      for (const provider of hostInspectProviders(ctx)) {
+        disposers.push(ctx.cordisInspect.register(provider))
+      }
+    } catch (error) {
+      for (const dispose of disposers.reverse()) dispose()
+      throw error
+    }
+    shared = {
+      references: 0,
+      dispose() {
+        for (const dispose of disposers.reverse()) dispose()
+      },
+    }
+    sharedHostProviders.set(root, shared)
+  }
+  shared.references += 1
+
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    if (--shared.references > 0) return
+    sharedHostProviders.delete(root)
+    shared.dispose()
+  }
 }
 
 function registration(

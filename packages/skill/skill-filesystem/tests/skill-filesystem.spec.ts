@@ -664,6 +664,28 @@ describe('FileSystemSkillProvider', () => {
 
   })
 
+  it('lets a default watcher coexist with atomic replacement of its parent preset directory', async () => {
+    const home = await tempDir('skill-watch-parent-publication')
+    const preset = join(home, 'preset')
+    const parked = join(home, 'parked')
+    const skills = join(preset, 'skills')
+    await writeSkill(skills, 'watched-skill', 'Watched skill')
+    const ctx = new Context()
+    await ctx.plugin(SkillRegistry)
+    const fiber = await ctx.plugin(SkillFileSystem, {
+      includeDefaultRoots: false,
+      customSkillDirs: [skills],
+      watch: true,
+    })
+    try {
+      expect((await ctx.skills.list()).map(skill => skill.name)).toEqual(['watched-skill'])
+      await expect(rename(preset, parked)).resolves.toBeUndefined()
+    } finally {
+      await fiber.dispose()
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
   it('uses fs/observed as a synchronous first-party invalidation path without a watcher', async () => {
     const home = await tempDir('skill-observed-home')
     const root = join(home, '.agents/skills')

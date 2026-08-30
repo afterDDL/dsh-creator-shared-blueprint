@@ -25,7 +25,7 @@ export type {
 export type { ConversationKey } from './locales.ts'
 export type {
   AssistantChatData, ChatNode, ChatNodeDataMap, ChatNodeKind, ManualCompactionChatData,
-  RetryChatData, ToolChatData, TurnTailChatData,
+  InternalTurnPresentationData, RetryChatData, ToolChatData, TurnTailChatData,
 } from './contract/chat-nodes.ts'
 export type {
   ChatFileMentions, ChatNodeOwnerProps, ChatNodeViewProps,

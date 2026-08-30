@@ -18,13 +18,13 @@ export interface Columns { sidebar: number; center: number; details: number }
 
 // Contract-frozen geometry: the three-column concession chain's fixed points.
 /** Center column floor; only the final fallback may go below it. */
-export const CENTER_MIN = 640
+export const CENTER_MIN = 600
 /** Sidebar drag clamp floor. */
-export const SIDEBAR_MIN = 264
+export const SIDEBAR_MIN = 220
 /** Sidebar drag clamp ceiling. */
-export const SIDEBAR_MAX = 420
+export const SIDEBAR_MAX = 360
 /** Sidebar width before any user drag. */
-export const SIDEBAR_DEFAULT = 280
+export const SIDEBAR_DEFAULT = 240
 /** Closed-sidebar rail: a 24px icon column between 16px horizontal paddings. */
 export const SIDEBAR_COLLAPSED = 56
 /** Viewport width below which the sidebar auto-collapses to the rail (deepsuite
@@ -32,11 +32,11 @@ export const SIDEBAR_COLLAPSED = 56
  * (stores.ts narrowExpanded). */
 export const SIDEBAR_AUTO_COLLAPSE = 1024
 /** Details drag clamp floor. */
-export const DETAILS_MIN = 300
+export const DETAILS_MIN = 400
 /** Details drag clamp ceiling. */
-export const DETAILS_MAX = 520
+export const DETAILS_MAX = 720
 /** Details width before any user drag. */
-export const DETAILS_DEFAULT = 360
+export const DETAILS_DEFAULT = 600
 
 /**
  * Clamp a panel width into its contract range.
