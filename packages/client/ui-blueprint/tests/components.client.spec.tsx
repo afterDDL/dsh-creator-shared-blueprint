@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -78,12 +78,13 @@ function props(selectedNodeId: string | null = null, blueprint: Blueprint = BLUE
     proposalCancellations: [], creator: null, capabilityHandoff: null,
   })
   const useBlueprintUi = <T,>(selector: (state: BlueprintUiState) => T): T =>
-    useSyncExternalStore(() => store.subscribe(() => undefined), () => selector(store.getSnapshot()))
+    useSyncExternalStore(onStoreChange => store.subscribe(onStoreChange), () => selector(store.getSnapshot()))
   return {
     useBlueprintUi,
     load: vi.fn(() => Promise.resolve()),
     selectPreset: vi.fn(() => Promise.resolve()),
     selectNode: vi.fn(),
+    selectCapability: vi.fn(),
     clearSelection: vi.fn(),
     updateText: vi.fn(() => Promise.resolve()),
     setCapability: vi.fn(() => Promise.resolve()),
@@ -96,6 +97,7 @@ function props(selectedNodeId: string | null = null, blueprint: Blueprint = BLUE
     cancelProposal: vi.fn(),
     applyChangeSet: vi.fn<(changeSet: BlueprintChangeSet) => Promise<void>>(() => Promise.resolve()),
     cancelChangeSet: vi.fn(),
+    store,
   }
 }
 
@@ -369,7 +371,9 @@ describe('Interactive Blueprint presentation', () => {
     expect(document.body.textContent).not.toMatch(/工具|技能|source-audit|spawn|provider|inherited/iu)
 
     fireEvent.click(screen.getByText('竞品信息核验'))
-    expect(actions.selectNode).toHaveBeenCalledWith('behavior:1')
+    expect(actions.selectCapability).toHaveBeenCalledWith(
+      'source-verification', '竞品信息核验', 'behavior:1',
+    )
     expect(screen.queryByRole('switch')).toBeNull()
   })
 
@@ -784,7 +788,9 @@ describe('Interactive Blueprint presentation', () => {
     fireEvent.click(screen.getByText('比较竞品。'))
     expect(actions.selectNode).toHaveBeenCalledWith('purpose:persona')
     fireEvent.click(screen.getByText('竞品信息核验'))
-    expect(actions.selectNode).toHaveBeenCalledWith('behavior:1')
+    expect(actions.selectCapability).toHaveBeenCalledWith(
+      'source-verification', '竞品信息核验', 'behavior:1',
+    )
     fireEvent.click(screen.getByText('竞品研究分析师'))
     expect(actions.selectNode).toHaveBeenCalledWith('identity:persona')
 
@@ -819,6 +825,13 @@ describe('Interactive Blueprint presentation', () => {
 
   it('shows and clears the selected context chip in the conversation dock', () => {
     const actions = props('capability:web-search')
+    actions.store.set({
+      ...actions.store.getSnapshot(),
+      selection: {
+        kind: 'capability', capabilityId: 'source-verification',
+        label: '竞品信息核验', nodeId: 'capability:web-search',
+      },
+    })
     render(<BlueprintSelectedContext {...(actions as unknown as BlueprintSelectedContextProps)} />)
 
     expect(screen.getByText('已选：')).toBeTruthy()
@@ -828,9 +841,81 @@ describe('Interactive Blueprint presentation', () => {
     expect(actions.clearSelection).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps one atomic Blueprint selection across capability and top-level targets', () => {
+    const actions = props()
+    const published: Array<{
+      kind: 'node'
+      nodeId: string
+    } | {
+      kind: 'capability'
+      capabilityId: string
+      label: string
+      nodeId: string
+    } | null> = []
+    const publish = (selection: (typeof published)[number]): void => {
+      actions.store.set({
+        ...actions.store.getSnapshot(), selection, selectedNodeId: selection?.nodeId ?? null,
+      })
+      published.push(selection)
+    }
+    actions.selectNode.mockImplementation((nodeId: string) => {
+      const current = actions.store.getSnapshot().selection
+      publish(current?.kind === 'node' && current.nodeId === nodeId ? null : { kind: 'node', nodeId })
+    })
+    actions.selectCapability.mockImplementation((capabilityId: string, label: string, nodeId: string) => {
+      const current = actions.store.getSnapshot().selection
+      publish(current?.kind === 'capability' && current.capabilityId === capabilityId
+        ? null
+        : { kind: 'capability', capabilityId, label, nodeId })
+    })
+    actions.clearSelection.mockImplementation(() => { publish(null) })
+
+    const view = render(<>
+      <div data-testid="blueprint-panel"><BlueprintPanel {...(actions as unknown as BlueprintPanelProps)} /></div>
+      <div data-testid="blueprint-context"><BlueprintSelectedContext {...(actions as unknown as BlueprintSelectedContextProps)} /></div>
+    </>)
+    const panel = view.getByTestId('blueprint-panel')
+    const context = view.getByTestId('blueprint-context')
+    const assertSelection = (label: string, expected: (typeof published)[number]): void => {
+      expect(panel.querySelectorAll('[data-selected="true"]')).toHaveLength(1)
+      expect(context.textContent).toBe(`已选：${label}×`)
+      expect(published.at(-1)).toEqual(expected)
+    }
+
+    fireEvent.click(view.getByText('读取文件'))
+    assertSelection('读取文件', {
+      kind: 'capability', capabilityId: 'file-reading', label: '读取文件', nodeId: 'capability:file-read',
+    })
+
+    fireEvent.click(view.getByText('比较竞品。'))
+    assertSelection('做什么', { kind: 'node', nodeId: 'purpose:persona' })
+    expect(view.getByText('读取文件').closest('button')?.hasAttribute('data-selected')).toBe(false)
+
+    fireEvent.click(view.getByText('竞品研究报告'))
+    assertSelection('输出', { kind: 'node', nodeId: 'output:2' })
+
+    fireEvent.click(within(panel).getByText('搜索公开信息'))
+    assertSelection('搜索公开信息', {
+      kind: 'capability', capabilityId: 'public-information-search', label: '搜索公开信息',
+      nodeId: 'capability:web-search',
+    })
+
+    fireEvent.click(within(panel).getByText('搜索公开信息'))
+    expect(panel.querySelectorAll('[data-selected="true"]')).toHaveLength(0)
+    expect(context.textContent).toBe('')
+    expect(published.at(-1)).toBeNull()
+  })
+
   it('keeps the selected context chip visible before Creator Ready', () => {
     const actions = props()
-    const state = { ...creatorState('creating', null), selectedNodeId: 'capability:web-search' }
+    const state = {
+      ...creatorState('creating', null),
+      selection: {
+        kind: 'capability' as const, capabilityId: 'source-verification',
+        label: '竞品信息核验', nodeId: 'capability:web-search',
+      },
+      selectedNodeId: 'capability:web-search',
+    }
     const creatorActions = {
       ...actions,
       useBlueprintUi: <T,>(selector: (value: BlueprintUiState) => T): T => selector(state),

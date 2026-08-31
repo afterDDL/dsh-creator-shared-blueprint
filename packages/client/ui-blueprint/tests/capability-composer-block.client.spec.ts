@@ -38,10 +38,14 @@ describe('Blueprint capability composer block projection', () => {
     const projection = new BlueprintCapabilityComposerBlockProjection(blocks)
 
     projection.sync(['source-cordis'], new Set())
-    expect(blocks.read('source-cordis')).toEqual({ reason: '正在配置能力…' })
+    expect(blocks.read('source-cordis')).toEqual({
+      reason: '正在配置能力…', runningPresentation: 'configuration',
+    })
 
     blocks.set('source-cordis', undefined)
-    expect(blocks.read('source-cordis')).toEqual({ reason: '正在配置能力…' })
+    expect(blocks.read('source-cordis')).toEqual({
+      reason: '正在配置能力…', runningPresentation: 'configuration',
+    })
 
     projection.sync([], new Set())
     expect(blocks.read('source-cordis')).toBeUndefined()

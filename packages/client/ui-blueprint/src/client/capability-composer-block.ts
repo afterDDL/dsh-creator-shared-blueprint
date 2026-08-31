@@ -1,5 +1,6 @@
 interface CapabilityComposerBlock {
   readonly reason: string
+  readonly runningPresentation?: 'configuration'
 }
 
 interface CapabilityComposerBlockStore {
@@ -17,7 +18,10 @@ interface CapabilityComposerBlockLease {
   stop: () => void
 }
 
-const CAPABILITY_COMPOSER_BLOCK: CapabilityComposerBlock = { reason: '正在配置能力…' }
+const CAPABILITY_COMPOSER_BLOCK: CapabilityComposerBlock = {
+  reason: '正在配置能力…',
+  runningPresentation: 'configuration',
+}
 
 /** Keep active capability source blocks resident when another input owner republishes its state. */
 export class BlueprintCapabilityComposerBlockProjection {
@@ -37,7 +41,9 @@ export class BlueprintCapabilityComposerBlockProjection {
       if (desired.has(sessionId) || retainedSessionIds.has(sessionId)) continue
       this.leases.delete(sessionId)
       lease.stop()
-      if (lease.store.getSnapshot()?.reason === CAPABILITY_COMPOSER_BLOCK.reason) {
+      const current = lease.store.getSnapshot()
+      if (current?.reason === CAPABILITY_COMPOSER_BLOCK.reason
+        && current.runningPresentation === CAPABILITY_COMPOSER_BLOCK.runningPresentation) {
         this.blocks.set(sessionId, undefined)
       }
     }
@@ -60,7 +66,9 @@ export class BlueprintCapabilityComposerBlockProjection {
 
   private reassert(sessionId: string): void {
     const lease = this.leases.get(sessionId)
-    if (lease === undefined || lease.store.getSnapshot()?.reason === CAPABILITY_COMPOSER_BLOCK.reason) return
+    const current = lease?.store.getSnapshot()
+    if (lease === undefined || (current?.reason === CAPABILITY_COMPOSER_BLOCK.reason
+      && current.runningPresentation === CAPABILITY_COMPOSER_BLOCK.runningPresentation)) return
     this.blocks.set(sessionId, CAPABILITY_COMPOSER_BLOCK)
   }
 }

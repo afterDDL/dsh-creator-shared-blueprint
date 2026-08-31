@@ -13,7 +13,7 @@
 // lifecycle updates replace only their own row without remounting it.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ChatNodeStore, ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
@@ -103,6 +103,21 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
   return latest
 }
 
+function openTurnUsesConfigurationProgress(timeline: ConversationTimelineSnapshot, nodes: ChatNodeStore): boolean {
+  const openTurns = new Set([...timeline.turns.values()]
+    .filter(turn => turn.status === 'open')
+    .map(turn => turn.turn))
+  if (openTurns.size === 0) return false
+  return nodes.values().some((node) => {
+    const location = node.location
+    if (location.kind !== 'turn' && location.kind !== 'step') return false
+    if (!openTurns.has(location.turn?.turn ?? -1)) return false
+    const data = node.data
+    return typeof data === 'object' && data !== null
+      && (data as { readonly runningPresentation?: unknown }).runningPresentation === 'configuration'
+  })
+}
+
 /** Turn-level model activity label retained across first-token, tool, and streaming phases. */
 function TurnStatus({ startTime, t }: {
   /** The running turn's logged `turn/start` time; null falls back to mount
@@ -145,12 +160,18 @@ function TurnStatus({ startTime, t }: {
  */
 export function ChatView({
   useSession, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, inspectCall, chatScroll, forkAt,
-  fileMentions, t,
+  fileMentions, useComposerBlock, t,
 }: ChatViewSlotProps) {
   const order = useSession(s => s.chat.order)
   const nodeStore = useSession(s => s.chat.nodes)
   const timeline = useSession(s => s.chat.timeline)
   const inbox = useSession(s => s.queue)
+  const pendingInteractions = useSession(s => s.pending)
+  const turnConfigurationProgress = useSession(s => openTurnUsesConfigurationProgress(s.chat.timeline, s.chat.nodes))
+  const lifecycleConfigurationProgress = useComposerBlock(
+    block => block?.runningPresentation === 'configuration',
+  )
+  const configurationProgress = turnConfigurationProgress || lifecycleConfigurationProgress
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
@@ -400,7 +421,9 @@ export function ChatView({
               double-render the same wait. */}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && <TurnStatus startTime={runningTurnStart} t={t} />}
+          {running && pendingInteractions.length === 0 && !configurationProgress && (
+            <TurnStatus startTime={runningTurnStart} t={t} />
+          )}
           {pendingSteering.map(item => (
             <PendingSteeringBubble key={item.id} content={item.content} loadImage={loadImage} t={t} />
           ))}

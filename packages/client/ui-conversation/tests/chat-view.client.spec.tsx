@@ -151,6 +151,7 @@ function emptyWorkspaces() {
 
 function makeHarness(init?: Partial<ConversationSnapshot>) {
   const { set, source } = makeSource(init)
+  const composerBlock = createSnapshotStore<{ reason: string; runningPresentation?: 'configuration' } | undefined>(undefined)
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => void>()
   const loadOlder = vi.fn()
@@ -277,6 +278,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
       submit: () => {},
     },
     useStore: bindSnapshotSelector(chat),
+    useComposerBlock: bindSnapshotSelector(composerBlock),
     actions: chat.actions,
     renderSlot,
     SessionProvider: SessionProviderStub,
@@ -295,7 +297,7 @@ function makeHarness(init?: Partial<ConversationSnapshot>) {
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, ChatView, props, openDetails, openFile, loadOlder, inspectCall,
-    chatScroll, forkAt, setSelection, toolOwners,
+    chatScroll, forkAt, setSelection, setComposerBlock: composerBlock.set, toolOwners,
   }
 }
 
@@ -876,6 +878,88 @@ describe('ChatView', () => {
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
     expect(view.getByRole('status').textContent).toBe('Deep diving...')
+  })
+
+  it('keeps Creator reasoning independent from hidden implementation rows across the question lifecycle', () => {
+    const base = chatSnapshotFixture({
+      partial: {
+        turn: 2,
+        step: 1,
+        blocks: [
+          { kind: 'reasoning', text: 'Compare the available sources before answering.' },
+          { kind: 'text', text: 'I am narrowing the research scope.' },
+        ],
+      },
+      turnTimings: new Map([[2, { startTime: Date.now() }]]),
+    })
+    const marker = {
+      key: 'creator-presentation', id: 'creator-presentation', target: 'chat',
+      kind: 'blueprint-creator-turn-presentation', anchorSeq: 2,
+      location: { kind: 'turn', turn: base.timeline.turns.get(2) },
+      visibility: 'hidden', data: { internalTurnPresentation: 'implementation-only' },
+    } as never
+    const chat = {
+      ...base,
+      nodes: {
+        get: (key: string) => key === 'creator-presentation' ? marker : base.nodes.get(key),
+        values: () => [...base.nodes.values(), marker],
+      },
+    }
+    const h = makeHarness({ chat, running: true })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('status').textContent).toBe('Deep diving...')
+    expect(view.getByText('Think')).toBeTruthy()
+    expect(view.getByText('Compare the available sources before answering.')).toBeTruthy()
+    expect(view.getByText('I am narrowing the research scope.')).toBeTruthy()
+
+    act(() => {
+      h.set({ pending: [{
+        kind: 'question', key: 'creator-question', sessionId: SID,
+        payload: { questions: [{ id: 'scope', question: 'Which scope should I use?' }] },
+        respond: vi.fn(),
+      }] as never })
+    })
+
+    expect(view.queryByText('Deep diving...')).toBeNull()
+    expect(view.queryByRole('status')).toBeNull()
+    act(() => { h.set({ pending: [] }) })
+    expect(view.getByRole('status').textContent).toBe('Deep diving...')
+
+    act(() => { h.set({ running: false }) })
+    expect(view.queryByRole('status')).toBeNull()
+  })
+
+  it('lets capability configuration progress replace the generic reasoning indicator', () => {
+    const base = chatSnapshotFixture({ turnTimings: new Map([[2, { startTime: Date.now() }]]) })
+    const marker = {
+      key: 'capability-presentation', id: 'capability-presentation', target: 'chat',
+      kind: 'blueprint-capability-route-turn-presentation', anchorSeq: 2,
+      location: { kind: 'turn', turn: base.timeline.turns.get(2) },
+      visibility: 'hidden', data: {
+        internalTurnPresentation: 'implementation-only', runningPresentation: 'configuration',
+      },
+    } as never
+    const chat = {
+      ...base,
+      nodes: {
+        get: (key: string) => key === 'capability-presentation' ? marker : base.nodes.get(key),
+        values: () => [...base.nodes.values(), marker],
+      },
+    }
+    const h = makeHarness({ chat, running: true })
+    const view = render(<h.ChatView {...h.props} />)
+
+    expect(view.queryByText('Deep diving...')).toBeNull()
+  })
+
+  it('lets lifecycle configuration progress suppress generic reasoning before its durable marker arrives', () => {
+    const h = makeHarness()
+    act(() => { h.setComposerBlock({ reason: '正在配置能力…', runningPresentation: 'configuration' }) })
+    const view = render(<h.ChatView {...h.props} />)
+
+    act(() => { h.set({ running: true }) })
+
+    expect(view.queryByText('Deep diving...')).toBeNull()
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {

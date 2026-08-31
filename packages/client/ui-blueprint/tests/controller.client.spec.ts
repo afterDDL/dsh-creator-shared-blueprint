@@ -2674,6 +2674,7 @@ describe('Interactive Blueprint controller', () => {
     '创建一个课程资料整理测试 Agent',
     '新建一个课程资料整理测试 Agent',
     '做一个课程资料整理测试 Agent',
+    '创建一个课程资料整理测试 Agent：先确认我的输出偏好',
   ])('recognizes an explicit Creator request: %s', async (text) => {
     const { controller } = bench()
     await controller.activateSession(CREATOR_SESSION_ID, 'cordis')
@@ -3199,6 +3200,41 @@ describe('Interactive Blueprint controller', () => {
     expect(sync).not.toHaveBeenCalled()
   })
 
+  it('publishes one semantic capability selection through its exact backing node', async () => {
+    const { controller, sync } = bench()
+    await controller.activateSession('source-capability-selection', 'competitive-research')
+    sync.mockClear()
+
+    controller.selectCapability(
+      'file-reading', '读取和分析文件', 'capability:file-read',
+    )
+
+    expect(controller.store.getSnapshot()).toMatchObject({
+      selection: {
+        kind: 'capability', capabilityId: 'file-reading', label: '读取和分析文件',
+        nodeId: 'capability:file-read',
+      },
+      selectedNodeId: 'capability:file-read',
+    })
+    expect(sync).toHaveBeenLastCalledWith(
+      expect.objectContaining({ preset: expect.objectContaining({ id: 'competitive-research' }) }),
+      'capability:file-read',
+    )
+
+    controller.selectNode('purpose:persona')
+    expect(controller.store.getSnapshot()).toMatchObject({
+      selection: { kind: 'node', nodeId: 'purpose:persona' },
+      selectedNodeId: 'purpose:persona',
+    })
+    expect(sync).toHaveBeenLastCalledWith(
+      expect.anything(), 'purpose:persona',
+    )
+
+    controller.clearSelection()
+    expect(controller.store.getSnapshot()).toMatchObject({ selection: null, selectedNodeId: null })
+    expect(sync).toHaveBeenLastCalledWith(expect.anything(), null)
+  })
+
   it('replaces the old Blueprint with the Creator Draft lifecycle', async () => {
     const { controller, sync } = bench()
     await controller.activateSession('creator-1', 'cordis')
@@ -3251,8 +3287,28 @@ describe('Interactive Blueprint controller', () => {
     })
   })
 
+  it('starts a Creator Draft from the common quoted Agent-name request', async () => {
+    const { controller } = bench()
+    await controller.activateSession('creator-quoted', 'cordis')
+
+    await observeCreator(controller, {
+      sessionId: 'creator-quoted', presetId: 'cordis', running: true, waitingFor: null, lastTurnEnd: null,
+      latestUserMessage: {
+        seq: 1,
+        text: '创建一个“AI思考展示验证 Agent”，用于比较两种研究方案。',
+      },
+      authoredPresetIds: [],
+    })
+
+    expect(controller.store.getSnapshot()).toMatchObject({
+      blueprint: null,
+      creator: { sessionId: 'creator-quoted', name: 'AI思考展示验证 Agent', status: 'creating' },
+    })
+  })
+
   it.each([
     '不要创建一个上市公司研究 Agent。',
+    '不要创建一个“AI思考展示验证 Agent”。',
     '不要创建一个名为「轻薄本研究预发布 Agent」的新 Agent preset。',
     '我不想创建一个上市公司研究 Agent。',
     'Do not create an equity research agent.',

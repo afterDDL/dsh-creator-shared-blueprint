@@ -121,14 +121,14 @@ function requestHeader(tools: readonly string[]) {
   }
 }
 
-function actualCreatorTurn(): readonly ConversationEventInput[] {
+function actualCreatorTurn(request = ACTUAL_CREATOR_REQUEST): readonly ConversationEventInput[] {
   const copyCallId = 'call_00_GTJIdxm00Xm1uV6771Oe9580'
   return [
     at(5, 'turn/start', { turn: 1 }),
     at(7, 'step/start', { turn: 1, step: 1 }),
     at(8, 'user/message', userMessage(
       'e5bcc3dc-c8b9-4699-aea2-270044cdf561',
-      ACTUAL_CREATOR_REQUEST,
+      request,
     ), { surfaceOp: 'append' }),
     at(13, 'request/header', requestHeader(['preset_list', 'preset_copy', 'preset_read', 'preset_validate'])),
     at(17, 'assistant/chunk', {
@@ -273,6 +273,18 @@ function visibleKinds(value: ChatSnapshot, turn: number): readonly string[] {
   return turnNodes(value, turn).filter(node => node.visibility === 'visible').map(node => node.kind)
 }
 
+function visibleAssistantBlocks(value: ChatSnapshot, turn: number): readonly {
+  readonly kind: string
+  readonly text?: string
+}[] {
+  return turnNodes(value, turn).flatMap((node) => {
+    if (node.visibility !== 'visible' || node.kind !== 'assistant-step') return []
+    return (node.data as {
+      readonly blocks: readonly { readonly kind: string; readonly text?: string }[]
+    }).blocks
+  })
+}
+
 function contextSnapshot(
   text: string,
   options: {
@@ -303,6 +315,25 @@ function contextSnapshot(
 describe('Blueprint Creator Turn presentation', () => {
   it('waits for the Conversation registry before the assembled Blueprint apply runs', () => {
     expect(inject).toContain('conversationEvents')
+  })
+
+  it('preserves ordinary Assistant conversation while suppressing Creator Context and Tool rows', () => {
+    const value = createAssembler()
+    value.replaceWindow(actualCreatorTurn(
+      '创建一个“研究生项目选择 Agent”，比较课程、学费与就业方向。',
+    ), false)
+    value.flush()
+
+    const current = snapshot(value)
+    expect(visibleKinds(current, 1)).toEqual(expect.arrayContaining([
+      'user', 'assistant-step', 'turn-tail',
+    ]))
+    expect(visibleKinds(current, 1)).not.toContain('tool-call')
+    expect(visibleAssistantBlocks(current, 1)).toEqual(expect.arrayContaining([
+      { kind: 'reasoning', text: 'I will author the preset.' },
+      { kind: 'reasoning', text: 'Everything is in place; expose paths and mount prose.' },
+      { kind: 'text', text: '创建与验证完成。mounted OK for light-laptop-research.' },
+    ]))
   })
 
   it('matches only the exact direct Creator runtime-context section', () => {
@@ -342,7 +373,7 @@ describe('Blueprint Creator Turn presentation', () => {
     ))).toBeNull()
   })
 
-  it('suppresses the actual direct Create implementation Turn before its first model output and across refresh', () => {
+  it('shows direct Creator Assistant output as it arrives and preserves it across refresh', () => {
     const entries = actualCreatorTurn()
     const headerIndex = entries.findIndex(entry => entry.event.seq === 13)
     expect(headerIndex).toBeGreaterThan(0)
@@ -363,21 +394,42 @@ describe('Blueprint Creator Turn presentation', () => {
 
     value.append(entries[headerIndex + 2]!)
     value.flush()
-    expect(visibleKinds(snapshot(value), 1)).toEqual(['user'])
+    expect(visibleKinds(snapshot(value), 1)).toEqual(['user', 'assistant-step'])
+    expect(visibleAssistantBlocks(snapshot(value), 1)).toContainEqual({
+      kind: 'reasoning', text: 'I will author the preset.',
+    })
 
     for (const entry of entries.slice(headerIndex + 3)) value.append(entry)
     value.flush()
     const settled = snapshot(value)
-    expect(visibleKinds(settled, 1)).toEqual(['user'])
+    expect(visibleKinds(settled, 1)).toEqual(expect.arrayContaining([
+      'user', 'assistant-step', 'turn-tail',
+    ]))
+    expect(visibleKinds(settled, 1)).not.toContain('tool-call')
+    expect(visibleAssistantBlocks(settled, 1)).toEqual(expect.arrayContaining([
+      { kind: 'reasoning', text: 'I will author the preset.' },
+      { kind: 'reasoning', text: 'Everything is in place; expose paths and mount prose.' },
+      { kind: 'text', text: '创建与验证完成。mounted OK for light-laptop-research.' },
+    ]))
     expect(turnNodes(settled, 1).find(node => node.kind === 'blueprint-creator-turn-presentation'))
-      .toMatchObject({ visibility: 'hidden' })
-    expect(settled.legacy.nodes.map(node => node.kind)).toEqual(['user'])
+      .toMatchObject({
+        visibility: 'hidden',
+        data: {
+          internalTurnPresentation: 'implementation-only',
+          assistantPresentation: 'assistant-visible',
+        },
+      })
+    expect(settled.legacy.nodes.map(node => node.kind)).toEqual(['user', 'assistant', 'assistant'])
 
     value.replaceWindow(entries, false)
     value.flush()
     const refreshed = snapshot(value)
-    expect(visibleKinds(refreshed, 1)).toEqual(['user'])
-    expect(refreshed.legacy.nodes.map(node => node.kind)).toEqual(['user'])
+    expect(visibleKinds(refreshed, 1)).toEqual(expect.arrayContaining([
+      'user', 'assistant-step', 'turn-tail',
+    ]))
+    expect(visibleKinds(refreshed, 1)).not.toContain('tool-call')
+    expect(visibleAssistantBlocks(refreshed, 1)).toEqual(visibleAssistantBlocks(settled, 1))
+    expect(refreshed.legacy.nodes.map(node => node.kind)).toEqual(['user', 'assistant', 'assistant'])
     const observation = creatorObservation('source-creator' as SessionId, 'cordis', {
       sessionId: 'source-creator', chat: refreshed, nodes: refreshed.legacy.nodes,
       pending: [], running: false, removed: false,
@@ -389,7 +441,7 @@ describe('Blueprint Creator Turn presentation', () => {
     expect(observation.authoredPresets).toContainEqual({ seq: 933, presetId: 'light-laptop-research' })
   })
 
-  it('suppresses context injections when the tail page starts after the Creator Turn boundaries', () => {
+  it('suppresses Context and Tool rows while retaining paged Creator Assistant conversation', () => {
     const value = createAssembler()
     value.replaceWindow([
       at(8, 'user/message', userMessage('paged-create-request', ACTUAL_CREATOR_REQUEST), {
@@ -425,12 +477,18 @@ describe('Blueprint Creator Turn presentation', () => {
     value.flush()
 
     const current = snapshot(value)
-    expect(visibleKinds(current, 1)).toEqual(['user'])
+    expect(visibleKinds(current, 1)).toEqual(expect.arrayContaining([
+      'user', 'assistant-step', 'turn-tail',
+    ]))
+    expect(visibleKinds(current, 1)).not.toContain('context')
     expect(turnNodes(current, 1).filter(node => node.kind === 'context'))
       .toHaveLength(3)
     expect(turnNodes(current, 1).filter(node => node.kind === 'context')
       .every(node => node.visibility === 'hidden')).toBe(true)
-    expect(current.legacy.nodes.map(node => node.kind)).toEqual(['user'])
+    expect(visibleAssistantBlocks(current, 1)).toContainEqual({
+      kind: 'reasoning', text: 'private preset analysis',
+    })
+    expect(current.legacy.nodes.map(node => node.kind)).toEqual(['user', 'assistant'])
 
     value.prepend([
       at(5, 'turn/start', { turn: 1 }),
@@ -439,8 +497,11 @@ describe('Blueprint Creator Turn presentation', () => {
     value.flush()
 
     const complete = snapshot(value)
-    expect(visibleKinds(complete, 1)).toEqual(['user'])
-    expect(complete.legacy.nodes.map(node => node.kind)).toEqual(['user'])
+    expect(visibleKinds(complete, 1)).toEqual(expect.arrayContaining([
+      'user', 'assistant-step', 'turn-tail',
+    ]))
+    expect(visibleKinds(complete, 1)).not.toContain('context')
+    expect(complete.legacy.nodes.map(node => node.kind)).toEqual(['user', 'assistant'])
   })
 
   it('keeps an ordinary truncated Turn context visible without exact Creator evidence', () => {
@@ -471,18 +532,26 @@ describe('Blueprint Creator Turn presentation', () => {
     ])
   })
 
-  it('suppresses a preserved legacy Creator suffix whose exact opening evidence is outside the page', () => {
+  it('preserves legacy Creator Assistant conversation while hiding its Tool rows', () => {
     const value = createAssembler()
     value.replaceWindow(pagedCreatorSuffix(), true)
     value.flush()
 
     const current = snapshot(value)
-    expect(visibleKinds(current, 1)).toEqual([])
+    expect(visibleKinds(current, 1)).toEqual(expect.arrayContaining(['assistant-step', 'turn-tail']))
+    expect(visibleKinds(current, 1)).not.toContain('tool-call')
+    expect(visibleAssistantBlocks(current, 1)).toEqual(expect.arrayContaining([
+      { kind: 'text', text: '现在进行挂载验证并确认 roster 元数据。' },
+      { kind: 'text', text: '创建与验证完成。' },
+    ]))
     expect(turnNodes(current, 1).find(node => node.id === 'read-light-laptop-research'))
       .toMatchObject({
         kind: 'blueprint-creator-turn-presentation',
         visibility: 'hidden',
-        data: { internalTurnPresentation: 'implementation-only' },
+        data: {
+          internalTurnPresentation: 'implementation-only',
+          assistantPresentation: 'assistant-visible',
+        },
       })
   })
 
@@ -533,7 +602,8 @@ describe('Blueprint Creator Turn presentation', () => {
     const value = createAssembler()
     value.replaceWindow(pagedCreatorSuffix(), true)
     value.flush()
-    expect(visibleKinds(snapshot(value), 1)).toEqual([])
+    expect(visibleKinds(snapshot(value), 1)).toEqual(expect.arrayContaining(['assistant-step', 'turn-tail']))
+    expect(visibleKinds(snapshot(value), 1)).not.toContain('tool-call')
 
     expect(() => {
       value.prepend([
@@ -547,13 +617,21 @@ describe('Blueprint Creator Turn presentation', () => {
     }).not.toThrow()
 
     const current = snapshot(value)
-    expect(visibleKinds(current, 1)).toEqual(['user'])
+    expect(visibleKinds(current, 1)).toEqual(expect.arrayContaining([
+      'user', 'assistant-step', 'turn-tail',
+    ]))
+    expect(visibleKinds(current, 1)).not.toContain('tool-call')
     const markers = turnNodes(current, 1)
       .filter(node => node.kind === 'blueprint-creator-turn-presentation')
     expect(markers.find(node => node.id === 'read-light-laptop-research')).toMatchObject({ data: {} })
     expect(markers.some(node => (
-      node.data as { readonly internalTurnPresentation?: string }
-    ).internalTurnPresentation === 'implementation-only')).toBe(true)
+      node.data as {
+        readonly internalTurnPresentation?: string
+        readonly assistantPresentation?: string
+      }
+    ).internalTurnPresentation === 'implementation-only'
+      && (node.data as { readonly assistantPresentation?: string }).assistantPresentation === 'assistant-visible'))
+      .toBe(true)
   })
 
   it('requires a same-Turn direct request for the early schema and retains exact copy evidence for paged refresh', () => {

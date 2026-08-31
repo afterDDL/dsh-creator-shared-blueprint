@@ -43,7 +43,7 @@ describe('web e2e: resident question composer round trip', () => {
   const sessionEvents: SessionEvent[] = []
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 })
+    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 100 })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -69,6 +69,9 @@ describe('web e2e: resident question composer round trip', () => {
     const settled = scaffold.whenTurnSettled(MODE === 'record' ? 180_000 : 30_000)
     await input.fill(PROMPT)
     await input.press('Enter')
+    await page.getByRole('status').filter({ hasText: 'Deep diving...' }).waitFor({
+      timeout: MODE === 'record' ? 120_000 : 10_000,
+    })
 
     // The composer takes over the input area while the tool blocks. Its
     // presence is a STABLE waiting state (not a transient): it stays until
@@ -76,6 +79,7 @@ describe('web e2e: resident question composer round trip', () => {
     const composer = page.locator('[data-question-key]')
     await composer.waitFor({ timeout: MODE === 'record' ? 120_000 : 30_000 })
     await expect.poll(() => composer.getByText('Which color do you prefer?').count(), { timeout: 10_000 }).toBeGreaterThan(0)
+    expect(await page.getByRole('status').filter({ hasText: 'Deep diving...' }).count()).toBe(0)
 
     const selectedRow = page.locator('[role="treeitem"][aria-selected="true"]')
     await expect.poll(() => selectedRow.locator('[data-state="warning"]').count(), { timeout: 10_000 }).toBe(1)
@@ -143,6 +147,7 @@ describe('web e2e: resident question composer round trip', () => {
       await compareOrRefreshGolden(COMPOSED_EXPECTED, snapshot, MODE)
     }
     await custom.press('Enter')
+    await page.getByRole('status').filter({ hasText: 'Deep diving...' }).waitFor({ timeout: 10_000 })
 
     const sessionId = await settled
     if (MODE === 'record') {
@@ -162,6 +167,7 @@ describe('web e2e: resident question composer round trip', () => {
     await expect.poll(() => page.getByText('DONE', { exact: true }).count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(1)
     // Composer gone; regular input restored.
     expect(await page.locator('[data-question-key]').count()).toBe(0)
+    expect(await page.getByRole('status').filter({ hasText: 'Deep diving...' }).count()).toBe(0)
     expect(await selectedRow.locator('[data-state="warning"]').count()).toBe(0)
     await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     // Golden of the answered transcript: the ask_user_question round trip

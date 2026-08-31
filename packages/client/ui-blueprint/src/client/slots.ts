@@ -14,6 +14,7 @@ export interface BlueprintInjected {
   load: () => Promise<void>
   selectPreset: (presetId: string) => Promise<void>
   selectNode: (nodeId: string) => void
+  selectCapability: (capabilityId: string, label: string, nodeId: string) => void
   clearSelection: () => void
   updateText: (nodeId: string, value: string, expectedValue: string) => Promise<void>
   setCapability: (nodeId: string, enabled: boolean) => Promise<void>

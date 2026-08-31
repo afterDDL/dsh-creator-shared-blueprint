@@ -2,8 +2,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { Blueprint, BlueprintChangeProposal, BlueprintChangeSet, BlueprintNode } from '@deepseek-ai/dsh-api-remotes/client'
 import { blueprintProposalStatus } from './proposal-status.ts'
-import type { BlueprintCreatorDraft, BlueprintUiState } from './controller.ts'
-import { deriveSemanticCapabilities, semanticCapabilityForNode } from './semantic-capabilities.ts'
+import { blueprintSelection, type BlueprintCreatorDraft, type BlueprintUiState } from './controller.ts'
+import { deriveSemanticCapabilities } from './semantic-capabilities.ts'
 import type { SemanticCapability } from './semantic-capabilities.ts'
 import type {
   BlueprintAgentRosterProps, BlueprintOverlayProps, BlueprintPanelProps,
@@ -331,21 +331,13 @@ function capabilityHandoffStatus(handoff: import('./controller.ts').BlueprintCap
   return `${handoff.label} · 正在判断…`
 }
 
-function semanticCapabilitySelected(capability: SemanticCapability, selectedNodeId: string | null): boolean {
-  return selectedNodeId !== null && capability.supportingNodeIds.includes(selectedNodeId)
-}
-
-function selectSemanticCapability(capability: SemanticCapability, selectNode: (nodeId: string) => void): void {
-  selectNode(capability.primaryNodeId)
-}
-
 function focusConversationComposer(): void {
   document.querySelector<HTMLTextAreaElement>('[data-composer-card] textarea:not(:disabled)')?.focus()
 }
 
 /** Right-column Blueprint with node-governed editing affordances. */
 export function BlueprintPanel({
-  useBlueprintUi, load, selectNode, updateText, beginCapabilityHandoff, openModal,
+  useBlueprintUi, load, selectNode, selectCapability, updateText, beginCapabilityHandoff, openModal,
   startDemoCapability, resetDemo,
 }: BlueprintPanelProps) {
   const state = useBlueprintUi(value => value)
@@ -366,8 +358,9 @@ export function BlueprintPanel({
   const creatorLocked = creator !== null && creator.status !== 'ready'
   const executorLocked = capabilityExecutorActive(state.capabilityHandoff)
   const interactionLocked = creatorLocked || executorLocked
+  const selection = blueprintSelection(state)
   const adjustNode = (nodeId: string): void => {
-    if (state.selectedNodeId !== nodeId) selectNode(nodeId)
+    if (selection?.kind !== 'node' || selection.nodeId !== nodeId) selectNode(nodeId)
     focusConversationComposer()
   }
   const handoffCapability = async (request: string): Promise<void> => {
@@ -425,7 +418,7 @@ export function BlueprintPanel({
   const presetName = blueprint.preset.name ?? blueprint.preset.id
   const visibleBehaviors = expanded.behaviors ? behaviors : behaviors.slice(0, 2)
   const primaryOutput = outputs.find(node => node.editable) ?? outputs[0]
-  const selectedCapability = blueprint.nodes.find(node => node.id === state.selectedNodeId && node.type === 'capability')
+  const selectedCapability = blueprint.nodes.find(node => node.id === selection?.nodeId && node.type === 'capability')
   const selectedCapabilityValue = selectedCapability !== undefined && typeof selectedCapability.value === 'object'
     && selectedCapability.value !== null && !Array.isArray(selectedCapability.value)
     ? selectedCapability.value as Record<string, unknown>
@@ -444,7 +437,7 @@ export function BlueprintPanel({
       key={node.id}
       node={node}
       labelLocale={labelLocale}
-      selected={state.selectedNodeId === node.id}
+      selected={selection?.kind === 'node' && selection.nodeId === node.id}
       busy={state.busy}
       directlyWritable={directlyWritable}
       onSelect={() => { selectNode(node.id) }}
@@ -472,7 +465,7 @@ export function BlueprintPanel({
             <div className={css.sectionHeader}><span>{labelLocale === 'zh' ? '角色' : 'Role'}</span></div>
             <EditableRow
               node={identity}
-              selected={state.selectedNodeId === identity.id}
+              selected={selection?.kind === 'node' && selection.nodeId === identity.id}
               busy={state.busy}
               directlyWritable={directlyWritable}
               onSelect={() => { selectNode(identity.id) }}
@@ -494,7 +487,7 @@ export function BlueprintPanel({
             <EditableRow
               node={purpose}
               labelLocale={labelLocale}
-              selected={state.selectedNodeId === purpose.id}
+              selected={selection?.kind === 'node' && selection.nodeId === purpose.id}
               busy={state.busy}
               directlyWritable={directlyWritable}
               onSelect={() => { selectNode(purpose.id) }}
@@ -607,8 +600,8 @@ export function BlueprintPanel({
               <SemanticCapabilityRow
                 key={capability.id}
                 capability={capability}
-                selected={semanticCapabilitySelected(capability, state.selectedNodeId)}
-                onSelect={() => { selectSemanticCapability(capability, selectNode) }}
+                selected={selection?.kind === 'capability' && selection.capabilityId === capability.id}
+                onSelect={() => { selectCapability(capability.id, capability.label, capability.primaryNodeId) }}
               />
             ))}
             {semanticCapabilities.length === 0 && (
@@ -700,9 +693,11 @@ export function BlueprintPanel({
 export function BlueprintSelectedContext({
   useBlueprintUi, clearSelection, clearCapabilityHandoff, beginCapabilityHandoff,
 }: BlueprintSelectedContextProps) {
-  const blueprint = useBlueprintUi(state => state.blueprint)
-  const selected = useBlueprintUi(state => state.blueprint?.nodes.find(node => node.id === state.selectedNodeId))
-  const handoff = useBlueprintUi(state => state.capabilityHandoff)
+  const state = useBlueprintUi(value => value)
+  const blueprint = state.blueprint
+  const selection = blueprintSelection(state)
+  const selected = blueprint?.nodes.find(node => node.id === selection?.nodeId)
+  const handoff = state.capabilityHandoff
   if (handoff !== null) {
     const status = handoff.status === 'completed'
       ? `✓ ${handoff.label}已加入`
@@ -733,15 +728,12 @@ export function BlueprintSelectedContext({
       </div>
     )
   }
-  if (selected === undefined) return null
-  const semanticLabel = blueprint === null || selected.type !== 'capability'
-    ? undefined
-    : semanticCapabilityForNode(blueprint, selected.id)?.label
+  if (selected === undefined || selection === null) return null
   const labelLocale = blueprint === null ? 'zh' : resolveBlueprintUiLabelLocale(blueprint)
   return (
     <div className={css.selectedContext}>
       <span className={css.selectedPrefix}>{labelLocale === 'zh' ? '已选：' : 'Selected: '}</span>
-      <span>{semanticLabel ?? nodeLabel(selected, labelLocale)}</span>
+      <span>{selection.kind === 'capability' ? selection.label : nodeLabel(selected, labelLocale)}</span>
       <button type="button" aria-label="清除已选 Blueprint 上下文" onClick={clearSelection}>×</button>
     </div>
   )

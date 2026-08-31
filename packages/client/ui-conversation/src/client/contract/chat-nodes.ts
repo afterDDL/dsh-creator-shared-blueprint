@@ -53,6 +53,10 @@ export interface RetryChatData {
 /** Client-only marker that suppresses implementation rows while retaining human input in one Turn. */
 export interface InternalTurnPresentationData {
   readonly internalTurnPresentation: 'implementation-only'
+  /** Preserve ordinary Assistant presentation while internal Context and Tool rows stay hidden. */
+  readonly assistantPresentation?: 'assistant-visible'
+  /** User-level configuration progress replaces the generic reasoning indicator. */
+  readonly runningPresentation?: 'configuration'
 }
 
 /** Turn-local footer row that owns actions and optional feature contributions. */

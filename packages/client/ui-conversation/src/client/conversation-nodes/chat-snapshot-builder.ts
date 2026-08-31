@@ -133,7 +133,7 @@ function locationCoordinates(location: ConversationLocation): { turn?: number; s
   return {}
 }
 
-type InternalTurnPresentation = 'hide-all' | InternalTurnPresentationData['internalTurnPresentation']
+type InternalTurnPresentation = 'hide-all' | 'implementation-only' | 'assistant-visible'
 
 function internalInputTurn(node: ChatConversationViewNode): {
   readonly turn: number
@@ -145,8 +145,14 @@ function internalInputTurn(node: ChatConversationViewNode): {
     const source = (node.data as { readonly source?: unknown }).source
     if (hasInternalPresentation(source)) return { turn, presentation: 'hide-all' }
   }
-  const presentation = (node.data as Partial<InternalTurnPresentationData>).internalTurnPresentation
-  return presentation === 'implementation-only' ? { turn, presentation } : undefined
+  const data = node.data as Partial<InternalTurnPresentationData>
+  if (data.internalTurnPresentation !== 'implementation-only') return undefined
+  return {
+    turn,
+    presentation: data.assistantPresentation === 'assistant-visible'
+      ? 'assistant-visible'
+      : 'implementation-only',
+  }
 }
 
 class InternalTurnProjection {
@@ -236,7 +242,8 @@ class InternalTurnProjection {
   private turnPresentation(turn: number): InternalTurnPresentation | undefined {
     const presentations = this.markersByTurn.get(turn)
     if ((presentations?.get('hide-all')?.size ?? 0) > 0) return 'hide-all'
-    return (presentations?.get('implementation-only')?.size ?? 0) > 0 ? 'implementation-only' : undefined
+    if ((presentations?.get('implementation-only')?.size ?? 0) > 0) return 'implementation-only'
+    return (presentations?.get('assistant-visible')?.size ?? 0) > 0 ? 'assistant-visible' : undefined
   }
 
   private project(node: ChatConversationViewNode): ChatConversationViewNode {
@@ -244,6 +251,7 @@ class InternalTurnProjection {
     const presentation = turn === undefined ? undefined : this.turnPresentation(turn)
     const internal = presentation === 'hide-all'
       || (presentation === 'implementation-only' && node.kind !== 'user' && node.kind !== 'steering')
+      || (presentation === 'assistant-visible' && (node.kind === 'context' || node.kind === 'tool-call'))
     if (internal) this.internalKeys.add(node.key)
     else this.internalKeys.delete(node.key)
     return internal && node.visibility === 'visible'

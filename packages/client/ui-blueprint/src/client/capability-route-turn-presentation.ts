@@ -9,6 +9,10 @@ import type {
 
 const CAPABILITY_ROUTE_TOOL = 'route_blueprint_capability_authoring'
 const CAPABILITY_ROUTING_INPUT_KIND = 'blueprint-capability-routing-input'
+const CAPABILITY_LIFECYCLE_INPUT_KINDS = new Set([
+  'blueprint-capability-authoring',
+  'blueprint-capability-repair',
+])
 
 interface CapabilityRoutingInputState {
   readonly seq: number
@@ -60,9 +64,11 @@ ConversationNodeDefinition<CapabilityRouteTurnPresentationState> = {
   kind: 'blueprint-capability-route-turn-presentation',
   target: 'chat',
   match: (event) => {
-    if (event.type === 'user/message' && isAppendSurfaceEvent(event)
-      && event.data.source.kind === 'user') {
-      return { id: String(event.data.id), role: 'start' }
+    if (event.type === 'user/message' && isAppendSurfaceEvent(event)) {
+      return event.data.source.kind === 'user'
+        || CAPABILITY_LIFECYCLE_INPUT_KINDS.has(event.data.source.kind)
+        ? { id: String(event.data.id), role: 'start' }
+        : null
     }
     return event.type === 'tool/call' && event.data.name === CAPABILITY_ROUTE_TOOL
       ? { id: String(event.data.callId), role: 'start' }
@@ -70,6 +76,9 @@ ConversationNodeDefinition<CapabilityRouteTurnPresentationState> = {
   },
   start: (_context, match, reader) => {
     if (match.event.type === 'user/message') {
+      if (CAPABILITY_LIFECYCLE_INPUT_KINDS.has(match.event.data.source.kind)) {
+        return { seq: match.event.seq, active: true }
+      }
       const routingInput = reader.previous<CapabilityRoutingInputState>(CAPABILITY_ROUTING_INPUT_KIND)
       return {
         seq: match.event.seq,
@@ -92,7 +101,10 @@ ConversationNodeDefinition<CapabilityRouteTurnPresentationState> = {
       anchorSeq: context.state.seq,
       location: locationOf(context),
       visibility: 'hidden',
-      data: { internalTurnPresentation: 'implementation-only' },
+      data: {
+        internalTurnPresentation: 'implementation-only',
+        runningPresentation: 'configuration',
+      },
     }
     return node
   },

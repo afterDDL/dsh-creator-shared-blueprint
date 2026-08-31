@@ -92,6 +92,32 @@ function userMessage(
   }, { surfaceOp: 'append' })
 }
 
+function lifecycleTurn(kind: 'blueprint-capability-authoring' | 'blueprint-capability-repair'):
+readonly ConversationEventInput[] {
+  return [
+    at(20, 'turn/start', { turn: 2 }),
+    at(21, 'step/start', { turn: 2, step: 1 }),
+    at(22, 'user/message', {
+      id: `${kind}-message`,
+      role: 'user',
+      content: [{ type: 'text', text: 'internal capability continuation' }],
+      source: { kind, sourceSessionId: 'source-1', routeId: 'route-capability-1' },
+    }, { surfaceOp: 'append' }),
+    at(23, 'assistant/message', {
+      turn: 2,
+      step: 1,
+      message: {
+        id: `${kind}-assistant`, role: 'assistant',
+        content: [{ type: 'reasoning', text: 'internal authoring reasoning' }],
+        source: { kind: 'model', provider: 'test', model: 'test' },
+      },
+    }, { surfaceOp: 'append' }),
+    at(24, 'tool/call', {
+      turn: 2, step: 1, callId: `${kind}-read`, name: 'read', arguments: '{}',
+    }),
+  ]
+}
+
 function assembledRouteTurn(messageId = 'route-message-1'): readonly ConversationEventInput[] {
   const callId = 'capability-route'
   return [
@@ -220,7 +246,13 @@ describe('Blueprint capability route Turn presentation', () => {
     expect(visibleKinds(snapshot(value), 1)).toEqual(['user'])
     expect(turnNodes(snapshot(value), 1).find(
       node => node.kind === 'blueprint-capability-route-turn-presentation',
-    )).toMatchObject({ visibility: 'hidden' })
+    )).toMatchObject({
+      visibility: 'hidden',
+      data: {
+        internalTurnPresentation: 'implementation-only',
+        runningPresentation: 'configuration',
+      },
+    })
 
     value.append(entries[4]!)
     value.flush()
@@ -255,6 +287,27 @@ describe('Blueprint capability route Turn presentation', () => {
         kind: 'skill',
       },
     }])
+  })
+
+  it.each([
+    'blueprint-capability-authoring',
+    'blueprint-capability-repair',
+  ] as const)('keeps the %s continuation in configuration presentation', (kind) => {
+    const value = createAssembler()
+    value.replaceWindow(lifecycleTurn(kind), false)
+    value.flush()
+
+    const current = snapshot(value)
+    expect(visibleKinds(current, 2)).toEqual([])
+    expect(turnNodes(current, 2).find(
+      node => node.kind === 'blueprint-capability-route-turn-presentation',
+    )).toMatchObject({
+      visibility: 'hidden',
+      data: {
+        internalTurnPresentation: 'implementation-only',
+        runningPresentation: 'configuration',
+      },
+    })
   })
 
   it('does not hide mismatched, direct-edit, plugin, or ordinary user Turns', () => {

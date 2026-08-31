@@ -192,12 +192,26 @@ export interface BlueprintCreatorObservation {
 /** Modal surface owned by the Builder. */
 export type BlueprintModal = 'try' | null
 
+/** One user-level Blueprint target; capability identity retains its real backing node for Host context. */
+export type BlueprintSelection = {
+  kind: 'node'
+  nodeId: string
+} | {
+  kind: 'capability'
+  capabilityId: string
+  label: string
+  nodeId: string
+}
+
 /** Immutable UI projection shared by the Builder's four slot entries. */
 export interface BlueprintUiState {
   phase: 'idle' | 'loading' | 'ready' | 'error'
   agents: readonly BlueprintAgentOption[]
   presetId: string
   blueprint: Blueprint | null
+  /** Canonical selection used by the panel, composer, and Host context publication. */
+  selection?: BlueprintSelection | null
+  /** Derived backing node retained for Host publication and legacy recovery. */
   selectedNodeId: string | null
   modal: BlueprintModal
   busy: boolean
@@ -213,6 +227,19 @@ export interface BlueprintUiState {
   capabilityHandoff: BlueprintCapabilityHandoff | null
   /** Deterministic local walkthrough state; absent in a real Host-backed assembly. */
   demo?: BlueprintDemoFlowState
+}
+
+/** Resolve canonical production selection with legacy fixture compatibility. */
+export function blueprintSelection(state: BlueprintUiState): BlueprintSelection | null {
+  if (state.selection !== undefined && state.selection !== null) return state.selection
+  return state.selectedNodeId === null
+    ? null
+    : { kind: 'node', nodeId: state.selectedNodeId }
+}
+
+/** Real projected node carried by the current user-level selection. */
+export function blueprintSelectionNodeId(state: BlueprintUiState): string | null {
+  return blueprintSelection(state)?.nodeId ?? null
 }
 
 /** Browser-local lifecycle flags for the scripted Blueprint walkthrough. */
@@ -273,7 +300,7 @@ export class BlueprintTrialValidationError extends Error {
 }
 
 const INITIAL: BlueprintUiState = {
-  phase: 'idle', agents: [], presetId: '', blueprint: null, selectedNodeId: null,
+  phase: 'idle', agents: [], presetId: '', blueprint: null, selection: null, selectedNodeId: null,
   modal: null, busy: false, error: null, validation: null,
   proposalCancellations: [],
   creator: null,
@@ -434,7 +461,7 @@ export class BlueprintUiController {
       const creator = sessionId === undefined ? undefined : this.creatorRecords.get(sessionId)
       const pendingCreator = sessionId === undefined ? undefined : this.pendingCreatorRoutes.get(sessionId)
       this.patch({
-        phase: 'loading', presetId: '', blueprint: null, selectedNodeId: null,
+        phase: 'loading', presetId: '', blueprint: null, selection: null,
         applyReceipts: [], proposalCancellations: [], applyReceiptsLoading: sessionId !== undefined,
         creator: creator === undefined
           ? pendingCreator === undefined || sessionId === undefined
@@ -461,7 +488,7 @@ export class BlueprintUiController {
     this.explicitSelectionSessionId = null
     this.projectedSessionId = undefined
     this.patch({
-      phase: 'loading', presetId: '', blueprint: null, selectedNodeId: null,
+      phase: 'loading', presetId: '', blueprint: null, selection: null,
       applyReceipts: [], proposalCancellations: [], applyReceiptsLoading: true,
       creator: null, capabilityHandoff: this.capabilityHandoffs.get(sessionId) ?? null,
       busy: false, validation: null, error: null,
@@ -494,7 +521,7 @@ export class BlueprintUiController {
     if (presetId === '' || previous.busy
       || (creator !== null && creator.status !== 'ready') || this.capabilityExecutionLocked()) return
     this.patch({
-      phase: 'loading', presetId, blueprint: null, selectedNodeId: null,
+      phase: 'loading', presetId, blueprint: null, selection: null,
       capabilityHandoff: this.foregroundCapability(),
       error: null, validation: null,
     })
@@ -522,11 +549,37 @@ export class BlueprintUiController {
     const owner = this.foregroundOwner()
     const state = this.store.getSnapshot()
     if (state.blueprint?.nodes.some(node => node.id === nodeId) !== true) return
-    const selectedNodeId = state.selectedNodeId === nodeId ? null : nodeId
-    this.patch({ selectedNodeId })
+    const current = blueprintSelection(state)
+    const selection: BlueprintSelection | null = current?.kind === 'node' && current.nodeId === nodeId
+      ? null
+      : { kind: 'node', nodeId }
+    this.patch({ selection })
     void this.syncConversationContext(
       state.blueprint,
-      selectedNodeId,
+      selection?.nodeId ?? null,
+      state.creator?.status === 'ready' ? undefined : state.creator ?? undefined,
+      undefined,
+      undefined,
+      owner,
+    ).catch((error: unknown) => {
+      if (this.ownsForeground(owner)) this.patch({ error: messageOf(error) })
+    })
+  }
+
+  /** Select one semantic capability while retaining its real Host-context node. */
+  selectCapability(capabilityId: string, label: string, nodeId: string): void {
+    const owner = this.foregroundOwner()
+    const state = this.store.getSnapshot()
+    if (state.blueprint?.nodes.some(node => node.id === nodeId) !== true) return
+    const current = blueprintSelection(state)
+    const selection: BlueprintSelection | null = current?.kind === 'capability'
+      && current.capabilityId === capabilityId
+      ? null
+      : { kind: 'capability', capabilityId, label, nodeId }
+    this.patch({ selection })
+    void this.syncConversationContext(
+      state.blueprint,
+      selection?.nodeId ?? null,
       state.creator?.status === 'ready' ? undefined : state.creator ?? undefined,
       undefined,
       undefined,
@@ -540,7 +593,7 @@ export class BlueprintUiController {
   clearSelection(): void {
     const owner = this.foregroundOwner()
     const state = this.store.getSnapshot()
-    this.patch({ selectedNodeId: null })
+    this.patch({ selection: null })
     void this.syncConversationContext(
       state.blueprint,
       null,
@@ -581,7 +634,7 @@ export class BlueprintUiController {
       status: 'configuring',
     }
     this.setCapabilityHandoff(handoff)
-    this.patch({ selectedNodeId: null, error: null })
+    this.patch({ selection: null, error: null })
     try {
       await this.syncConversationContext(
         state.blueprint,
@@ -689,7 +742,7 @@ export class BlueprintUiController {
       )
       if (!this.ownsForeground(owner)) return true
       this.patch({
-        phase: 'ready', presetId: blueprint.preset.id, blueprint, selectedNodeId: null,
+        phase: 'ready', presetId: blueprint.preset.id, blueprint, selection: null,
         creator: null, error: null,
       })
       this.targetPreference.write(blueprint.preset.id, owner.sourceSessionId)
@@ -734,7 +787,7 @@ export class BlueprintUiController {
       )
       if (!this.ownsForeground(owner)) return true
       this.patch({
-        phase: 'ready', presetId: blueprint.preset.id, blueprint, selectedNodeId: null,
+        phase: 'ready', presetId: blueprint.preset.id, blueprint, selection: null,
         creator: null, error: null,
       })
       this.targetPreference.write(blueprint.preset.id, owner.sourceSessionId)
@@ -1013,7 +1066,7 @@ export class BlueprintUiController {
     try {
       await this.syncConversationContext(
         blueprint,
-        blueprint === null ? null : state.selectedNodeId,
+        blueprint === null ? null : blueprintSelectionNodeId(state),
         creatorDraft,
         undefined,
         undefined,
@@ -1036,13 +1089,13 @@ export class BlueprintUiController {
     this.pendingCreatorRoutes.set(sourceSessionId, route)
     if (this.activeRuntimePresetId !== 'cordis') {
       this.patch({
-        phase: 'loading', presetId: '', blueprint: null, selectedNodeId: null,
+        phase: 'loading', presetId: '', blueprint: null, selection: null,
         creator: null, capabilityHandoff: null, validation: null, error: null,
       })
       return
     }
     this.patch({
-      phase: 'ready', presetId: '', blueprint: null, selectedNodeId: null, modal: null,
+      phase: 'ready', presetId: '', blueprint: null, selection: null, modal: null,
       capabilityHandoff: null, validation: null, error: null,
       creator: {
         sessionId: sourceSessionId,
@@ -1148,7 +1201,7 @@ export class BlueprintUiController {
       this.pendingCreatorRoutes.delete(ownerSessionId)
       this.creatorRecords.set(ownerSessionId, record)
       if (typedRequest?.terminal === undefined) this.patch({
-        phase: 'ready', presetId: '', blueprint: null, selectedNodeId: null, modal: null,
+        phase: 'ready', presetId: '', blueprint: null, selection: null, modal: null,
         capabilityHandoff: null, validation: null, error: null, creator: this.publicCreator(record),
       })
       if (typedRequest?.terminal === undefined) {
@@ -1238,7 +1291,7 @@ export class BlueprintUiController {
     }
     if (!associationStillAllowed(record)) {
       record = { ...record, targetPresetId: null, candidateIds: [], blueprintRevealed: false }
-      this.patch({ presetId: '', blueprint: null, selectedNodeId: null })
+      this.patch({ presetId: '', blueprint: null, selection: null })
     }
     const previousStatus = record.status
     if (record.status !== 'ready') record.status = this.nonReadyCreatorStatus(record)
@@ -1248,7 +1301,7 @@ export class BlueprintUiController {
       const state = this.store.getSnapshot()
       await this.syncConversationContext(
         state.blueprint,
-        state.selectedNodeId,
+        blueprintSelectionNodeId(state),
         this.publicCreator(record),
         undefined,
         undefined,
@@ -1287,7 +1340,7 @@ export class BlueprintUiController {
     directEditInput: BlueprintStructuredEditInput,
     owner: ForegroundOwner,
   ): Promise<void> {
-    this.patch({ busy: true, selectedNodeId: directEditInput.nodeId, error: null, validation: null })
+    this.patch({ busy: true, selection: { kind: 'node', nodeId: directEditInput.nodeId }, error: null, validation: null })
     try {
       await this.syncConversationContext(
         blueprint, directEditInput.nodeId, undefined, undefined, directEditInput, owner,
@@ -1478,7 +1531,7 @@ export class BlueprintUiController {
         if (!this.ownsForeground(owner)) return
         this.patch({ busy: false, phase: 'ready', blueprint: current, capabilityHandoff: null, error: transactionFailureMessage(result) })
         await this.syncConversationContext(
-          current, this.store.getSnapshot().selectedNodeId, undefined, undefined, undefined, owner,
+          current, blueprintSelectionNodeId(this.store.getSnapshot()), undefined, undefined, undefined, owner,
         )
         return
       }
@@ -1490,7 +1543,7 @@ export class BlueprintUiController {
       this.patch({ busy: false, phase: 'ready', blueprint: current, capabilityHandoff: null })
       await this.syncConversationContext(
         current,
-        this.store.getSnapshot().selectedNodeId,
+        blueprintSelectionNodeId(this.store.getSnapshot()),
         undefined,
         userChange,
         undefined,
@@ -1606,7 +1659,7 @@ export class BlueprintUiController {
         : this.pendingCreatorRoutes.get(this.activeSessionId)
       if (creator === null && pendingRoute !== undefined) {
         const draft = this.pendingCreatorDraft(this.activeSessionId as string, pendingRoute)
-        this.patch({ agents, phase: 'ready', presetId: '', blueprint: null, selectedNodeId: null, creator: draft })
+        this.patch({ agents, phase: 'ready', presetId: '', blueprint: null, selection: null, creator: draft })
         await this.syncConversationContext(null, null, draft, undefined, undefined, owner)
         return
       }
@@ -1629,13 +1682,13 @@ export class BlueprintUiController {
           : { ...record, blueprintRevealed }
         this.creatorRecords.set(creator.sessionId, next)
         const visibleBlueprint = blueprintRevealed ? blueprint : null
-        const selectedNodeId = visibleBlueprint === null ? null : this.retainedSelection(visibleBlueprint)
+        const selection = visibleBlueprint === null ? null : this.retainedSelection(visibleBlueprint)
         this.patch({
-          agents, phase: 'ready', presetId: targetPresetId, blueprint: visibleBlueprint, selectedNodeId,
+          agents, phase: 'ready', presetId: targetPresetId, blueprint: visibleBlueprint, selection,
           creator: this.publicCreator(next),
         })
         await this.syncConversationContext(
-          visibleBlueprint, selectedNodeId, this.publicCreator(next), undefined, undefined, owner,
+          visibleBlueprint, selection?.nodeId ?? null, this.publicCreator(next), undefined, undefined, owner,
         )
         return
       }
@@ -1675,12 +1728,12 @@ export class BlueprintUiController {
         this.projectedSessionId = this.activeSessionId
         this.patch({
           agents, phase: 'ready', presetId: blueprint.preset.id, blueprint,
-          selectedNodeId: this.retainedSelection(blueprint), error: null,
+          selection: this.retainedSelection(blueprint), error: null,
         })
         const conversationBlueprint = this.modelContextBlueprint(blueprint, null)
         await this.syncConversationContext(
           conversationBlueprint,
-          conversationBlueprint === null ? null : this.store.getSnapshot().selectedNodeId,
+          conversationBlueprint === null ? null : blueprintSelectionNodeId(this.store.getSnapshot()),
           undefined,
           undefined,
           undefined,
@@ -1691,7 +1744,7 @@ export class BlueprintUiController {
         return
       }
       this.patch({
-        agents, phase: 'error', presetId: '', blueprint: null, selectedNodeId: null,
+        agents, phase: 'error', presetId: '', blueprint: null, selection: null,
         error: lastError ?? '没有可用的 Agent。',
       })
     } catch (error) {
@@ -1768,7 +1821,7 @@ export class BlueprintUiController {
           const visibleBlueprint = record.blueprintRevealed ? target.blueprint : null
           this.patch({
             agents, phase: 'ready', presetId: target.agent.id, blueprint: visibleBlueprint,
-            selectedNodeId: null, creator: this.publicCreator(record), error: null,
+            selection: null, creator: this.publicCreator(record), error: null,
           })
           await this.syncConversationContext(visibleBlueprint, null, this.publicCreator(record))
         } else {
@@ -1811,15 +1864,15 @@ export class BlueprintUiController {
         this.creatorRecords.set(sessionId, next)
         const previousBlueprint = this.store.getSnapshot().blueprint
         const visibleBlueprint = blueprintRevealed ? projection.value : null
-        const selectedNodeId = visibleBlueprint === null ? null : this.retainedSelection(visibleBlueprint)
+        const selection = visibleBlueprint === null ? null : this.retainedSelection(visibleBlueprint)
         this.patch({
           agents, phase: 'ready', presetId: targetPresetId, blueprint: visibleBlueprint,
-          selectedNodeId, creator: this.publicCreator(next), error: null,
+          selection, creator: this.publicCreator(next), error: null,
         })
         if (next.status !== record.status
           || previousBlueprint?.revision !== visibleBlueprint?.revision
           || (previousBlueprint === null) !== (visibleBlueprint === null)) {
-          await this.syncConversationContext(visibleBlueprint, selectedNodeId, this.publicCreator(next))
+          await this.syncConversationContext(visibleBlueprint, selection?.nodeId ?? null, this.publicCreator(next))
         }
         return
       }
@@ -1838,12 +1891,12 @@ export class BlueprintUiController {
       }
       const ready: CreatorRecord = { ...record, status: 'ready', candidateIds: [targetPresetId] }
       this.creatorRecords.set(sessionId, ready)
-      const selectedNodeId = this.retainedSelection(finalBlueprint)
+      const selection = this.retainedSelection(finalBlueprint)
       this.patch({
         agents, phase: 'ready', presetId: targetPresetId, blueprint: finalBlueprint,
-        selectedNodeId, creator: this.publicCreator(ready), error: null,
+        selection, creator: this.publicCreator(ready), error: null,
       })
-      await this.syncConversationContext(finalBlueprint, selectedNodeId)
+      await this.syncConversationContext(finalBlueprint, selection?.nodeId ?? null)
       if (!this.creatorRecordIsCurrent(sessionId, ready, generation)) return
       this.projectedSessionId = this.activeSessionId
       this.targetPreference.write(finalBlueprint.preset.id, record.sessionId)
@@ -1917,10 +1970,10 @@ export class BlueprintUiController {
       && this.creatorRecords.get(sessionId)?.lifecycleVersion === record.lifecycleVersion
   }
 
-  private retainedSelection(blueprint: Blueprint): string | null {
-    const selectedNodeId = this.store.getSnapshot().selectedNodeId
-    return selectedNodeId !== null && blueprint.nodes.some(node => node.id === selectedNodeId)
-      ? selectedNodeId
+  private retainedSelection(blueprint: Blueprint): BlueprintSelection | null {
+    const selection = blueprintSelection(this.store.getSnapshot())
+    return selection !== null && blueprint.nodes.some(node => node.id === selection.nodeId)
+      ? selection
       : null
   }
 
@@ -1931,9 +1984,12 @@ export class BlueprintUiController {
     if (previous?.routeId !== undefined && previous.status === 'ready'
       && patch.creator?.sessionId === previous.sessionId && patch.creator.routeId === previous.routeId
       && patch.creator.status !== 'ready') return
+    const normalized = patch.selection === undefined
+      ? patch
+      : { ...patch, selectedNodeId: patch.selection?.nodeId ?? null }
     this.store.set({
       ...this.store.getSnapshot(),
-      ...patch,
+      ...normalized,
       capabilityHandoff: this.foregroundCapability(),
     })
     const state = this.store.getSnapshot()
@@ -2221,20 +2277,26 @@ export function blueprintSessionLifecycleDiagnostic(input: {
 export function creatorRequest(text: string): string | null {
   const normalized = text.replace(/\s+/gu, ' ').trim()
   const isNegated = (index: number): boolean => {
-    const clausePrefix = normalized.slice(0, index).split(/[，。！？；;,.!?]/u).at(-1)?.trimEnd() ?? ''
+    const clausePrefix = normalized.slice(0, index).split(/[，。！？；：;,:.!?]/u).at(-1)?.trimEnd() ?? ''
     return /(?:不要|不应|无需|不需要|禁止|别|不想(?:要)?|不)\s*(?:再)?\s*(?:请\s*)?$/u.test(clausePrefix)
       || /(?:do not|don't|must not|without)\s*$/iu.test(clausePrefix)
   }
   for (const candidate of normalized.matchAll(
-    /(?:请\s*)?(?:创建|新建)\s*(?:一个|个)?\s*名为\s*[「“"]\s*([^」”"]{1,40}?)\s*(Agent|智能体|助手)\s*[」”"]\s*的\s*新\s*(Agent|智能体|助手)\s*preset([，。！？]|$)/giu,
+    /(?:请\s*)?(?:帮我\s*)?(?:创建|新建|搭建|打造|做|弄)\s*(?:一个|个)?\s*[「“"]\s*([^」”"]{1,40}?)\s*(Agent|智能体|助手)\s*[」”"](?=[，。！？：:,.!?]|$)/giu,
+  )) {
+    const label = candidate.at(1)?.trim()
+    if (!isNegated(candidate.index)) return `${label || '新'} Agent`
+  }
+  for (const candidate of normalized.matchAll(
+    /(?:请\s*)?[创新]建\s*(?:一?个)?\s*名为\s*[「“"]\s*([^」”"]{1,40}?)\s*(Agent|智能体|助手)\s*[」”"]\s*的\s*新\s*(Agent|智能体|助手)\s*preset([，。！？：:]|$)/giu,
   )) {
     const label = candidate.at(1)?.trim()
     if (!isNegated(candidate.index)) return `${label || '新'} Agent`
   }
   const chinesePatterns = [
-    /(?:我要|我想要|我需要)\s*(?:一个|个)\s*([^，。！？]{1,40}?)\s*(?:Agent|智能体|助手)(?:[，。！？]|$)/giu,
-    /(?:请\s*)?帮我\s*(?:创建|新建|搭建|打造|做|弄)\s*(?:一个|个)?\s*([^，。！？]{1,40}?)\s*(?:Agent|智能体|助手)(?:[，。！？]|$)/giu,
-    /(?:我想|我要|请)?\s*(?:创建|新建|搭建|打造|做|弄)\s*(?:一个|个)?\s*([^，。！？]{1,40}?)\s*(?:Agent|智能体|助手)(?:[，。！？]|$)/giu,
+    /(?:我要|我想要|我需要)\s*(?:一个|个)\s*([^，。！？：:]{1,40}?)\s*(?:Agent|智能体|助手)(?:[，。！？：:]|$)/giu,
+    /(?:请\s*)?帮我\s*(?:创建|新建|搭建|打造|做|弄)\s*(?:一个|个)?\s*([^，。！？：:]{1,40}?)\s*(?:Agent|智能体|助手)(?:[，。！？：:]|$)/giu,
+    /(?:我想|我要|请)?\s*(?:创建|新建|搭建|打造|做|弄)\s*(?:一个|个)?\s*([^，。！？：:]{1,40}?)\s*(?:Agent|智能体|助手)(?:[，。！？：:]|$)/giu,
   ]
   for (const pattern of chinesePatterns) {
     for (const candidate of normalized.matchAll(pattern)) {
@@ -2243,7 +2305,7 @@ export function creatorRequest(text: string): string | null {
     }
   }
   for (const candidate of normalized.matchAll(
-    /(?:create|build|make)\s+(?:a|an)?\s*([^.!?]{1,40}?)\s+agent(?:[.!?]|$)/giu,
+    /(?:create|build|make)\s+(?:a|an)?\s*([^.!?:]{1,40}?)\s+agent(?:[.!?:]|$)/giu,
   )) {
     const label = candidate.at(1)?.trim()
     if (!isNegated(candidate.index)) return `${label || 'New'} Agent`

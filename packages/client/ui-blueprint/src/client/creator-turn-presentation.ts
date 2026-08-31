@@ -33,13 +33,11 @@ interface PresetCallEvidenceState {
   readonly presetId: string
 }
 
-interface CreatorTurnPresentationData {
-  readonly internalTurnPresentation?: InternalTurnPresentationData['internalTurnPresentation']
-}
+type CreatorTurnPresentationData = Partial<InternalTurnPresentationData>
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap {
-    /** Hidden marker that retains human input while suppressing direct Creator implementation rows. */
+    /** Hidden marker that retains ordinary Assistant conversation while suppressing internal Creator rows. */
     'blueprint-creator-turn-presentation': CreatorTurnPresentationData
   }
 }
@@ -238,14 +236,17 @@ export const blueprintCreatorTurnPresentationDefinition: ConversationNodeDefinit
       anchorSeq: context.state.seq,
       location: locationOf(context),
       visibility: 'hidden',
-      data: context.state.active ? { internalTurnPresentation: 'implementation-only' } : {},
+      data: context.state.active ? {
+        internalTurnPresentation: 'implementation-only',
+        assistantPresentation: 'assistant-visible',
+      } : {},
     }
     return node
   },
 }
 
 /**
- * Register direct Creator Chat suppression against existing durable request and runtime-context evidence.
+ * Register direct Creator Chat presentation against existing durable request and runtime-context evidence.
  * @param ctx - owning Blueprint client context.
  */
 export function registerBlueprintCreatorTurnPresentation(ctx: ClientContext): void {

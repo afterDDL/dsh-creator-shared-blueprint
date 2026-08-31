@@ -399,6 +399,7 @@ export function apply(ctx: Context): void {
       const conversation = concreteConversation(ctx)
       const scoped = scopedConversation(sessions, sessionId)
       return {
+        hooks: { composerBlock: composerBlocks.storeFor(sessionId) },
         openDetails: (target) => {
           actions.select(target)
           layout.openDetails()
