@@ -6,7 +6,7 @@ import goalsRemote from '@deepseek-ai/dsh-goal/remote'
 import dynamicRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
 import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
-import blueprintRemote from '@deepseek-ai/dsh-blueprint-adapter/remote'
+import blueprintRemote from '@deepseek-ai/dsh-shared-blueprint/remote'
 import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 
 export type { TypertClientRemote as ClientRemote } from '@deepseek-ai/dsh-typert-protocol'
@@ -15,7 +15,7 @@ export type {} from '@deepseek-ai/dsh-commands/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
 export type {} from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 export type {} from '@deepseek-ai/dsh-message-feedback/remote'
-export type {} from '@deepseek-ai/dsh-blueprint-adapter/remote'
+export type {} from '@deepseek-ai/dsh-shared-blueprint/remote'
 export type {
   Blueprint, BlueprintApplyChangeSetRequest, BlueprintApplyChangeSetResult, BlueprintApplyChangeSetStatus, BlueprintApplyReceipt,
   BlueprintCancelChangeSetRequest, BlueprintCapabilityAuthoringKind, BlueprintCapabilityAuthoringRoute,
@@ -31,7 +31,7 @@ export type {
   BlueprintStructuredEdit, BlueprintStructuredEditInput,
   BlueprintToolEvidence, BlueprintUserChange, BlueprintUserChangeInput,
   BlueprintUserChangeOperation, BlueprintValidateSessionRequest,
-} from '@deepseek-ai/dsh-blueprint-adapter/types'
+} from '@deepseek-ai/dsh-shared-blueprint/contract'
 // The forwarded-event allowlist's selection seat: without it in the consumer's
 // compilation face `TypertRemoteEvent` is `never` and every `$on` call fails.
 export type { ApiRemoteForwardedEvent } from '../types.ts'

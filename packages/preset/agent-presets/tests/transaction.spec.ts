@@ -123,7 +123,10 @@ describe('isolated agent preset transactions', () => {
     const disposition = await restarted.agentPresets.publishTransaction(transaction, digest)
     expect(disposition.disposition).toBe('committed')
     expect(await restarted.agentPresets.read('external-agent')).toBe(CANDIDATE)
-    expect((await restarted.agentPresets.recoverTransaction(transaction)).disposition).toEqual(disposition)
+    const recovery = await restarted.agentPresets.recoverTransaction(transaction)
+    expect(recovery.state).toBe('committed')
+    if (recovery.state !== 'committed') throw new Error('expected committed transaction recovery')
+    expect(recovery.disposition).toEqual(disposition)
     await restarted.agentPresets.cleanupTransaction(transaction)
   })
 

@@ -429,4 +429,4 @@
         default: standard
 
     - id: blueprint-adapter
-      name: '@deepseek-ai/dsh-blueprint-adapter'
+      name: '@deepseek-ai/dsh-shared-blueprint'

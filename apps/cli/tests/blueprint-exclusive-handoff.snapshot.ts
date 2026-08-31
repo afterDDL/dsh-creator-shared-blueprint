@@ -13,7 +13,7 @@ it.skipIf(process.env.DSH_EXAMPLE_MODE !== 'lib')('the runnable headless composi
   const require = createRequire(import.meta.url)
   const { boot } = require('../../../packages/boot/app-boot/lib/index.js') as typeof import('@deepseek-ai/dsh-app-boot')
   const { default: AgentPresets } = require('../../../packages/preset/agent-presets/lib/index.js') as typeof import('@deepseek-ai/dsh-agent-presets')
-  const { default: BlueprintAdapter } = require('../../../packages/preset/blueprint-adapter/lib/index.js') as typeof import('@deepseek-ai/dsh-blueprint-adapter')
+  const { default: BlueprintAdapter } = require('../../../packages/bundle/shared-blueprint/lib/index.js') as typeof import('@deepseek-ai/dsh-shared-blueprint')
   const PresetAuthoring = require('../../../packages/preset/tool-agent-preset-authoring/lib/index.js') as typeof import('@deepseek-ai/dsh-tool-agent-preset-authoring')
   const { createUserMessage } = require('../../../packages/llm/llm/lib/index.js') as typeof import('@deepseek-ai/dsh-llm')
   const { SessionId } = require('../../../packages/core/session/lib/index.js') as typeof import('@deepseek-ai/dsh-session')

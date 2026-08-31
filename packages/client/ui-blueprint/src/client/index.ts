@@ -1098,7 +1098,7 @@ export function apply(ctx: ClientContext): void {
       })
       if (ctx.sessions.list.getSnapshot().current !== authoring.sourceSessionId) return
       const creator = controller.store.getSnapshot().creator
-      if (authoring.terminal === undefined && creator?.routeId === authoring.routeId
+      if (authoring.terminal === undefined && creator !== null && creator.routeId === authoring.routeId
         && creator.status !== 'ready') return
       creatorAuthoringContinuations.delete(sessionId)
       refreshCreatorAuthoringSubscriptions()

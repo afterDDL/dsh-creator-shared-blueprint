@@ -274,7 +274,7 @@
     { "path": "./packages/plan/plan-mode" },
     { "path": "./packages/preset/agent-presets" },
     { "path": "./packages/preset/tool-agent-preset-authoring" },
-    { "path": "./packages/preset/blueprint-adapter" },
+    { "path": "./packages/bundle/shared-blueprint" },
     { "path": "./packages/preset/persona" },
     { "path": "./packages/guard/repeat-tool-reminder" },
     { "path": "./packages/extensions/cordis-host-runner" },

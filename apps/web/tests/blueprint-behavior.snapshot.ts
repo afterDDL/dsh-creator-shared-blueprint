@@ -12,8 +12,8 @@ it('renders the real RC rule source collapsed and expanded in the runnable Bluep
   // The Host parser runs under its source launcher, separate from this Client compiler face.
   const projectionScript = `
     import { readFileSync } from 'node:fs';
-    import { projectBehaviors } from './packages/preset/blueprint-adapter/src/behavior.ts';
-    import { parseComposition, personaText, projectPersona } from './packages/preset/blueprint-adapter/src/composition.ts';
+    import { projectBehaviors } from './packages/bundle/shared-blueprint/src/host/behavior.ts';
+    import { parseComposition, personaText, projectPersona } from './packages/bundle/shared-blueprint/src/host/composition.ts';
     const composition = readFileSync('examples/web-blueprint-demo/tests/fixtures/preset/blueprint-adapter/rc1-folded-rules.cordis.yml', 'utf8');
     const text = personaText(parseComposition(composition));
     console.log(JSON.stringify(projectBehaviors(text, projectPersona(text).items, composition, true).nodes));

@@ -153,9 +153,6 @@ importers:
       '@deepseek-ai/dsh-base':
         specifier: workspace:^
         version: link:../../packages/bundle/base
-      '@deepseek-ai/dsh-blueprint-adapter':
-        specifier: workspace:^
-        version: link:../../packages/preset/blueprint-adapter
       '@deepseek-ai/dsh-client-ui-agent-preset':
         specifier: workspace:^
         version: link:../../packages/client/ui-agent-preset
@@ -228,6 +225,9 @@ importers:
       '@deepseek-ai/dsh-session-reference':
         specifier: workspace:^
         version: link:../../packages/context/session-reference
+      '@deepseek-ai/dsh-shared-blueprint':
+        specifier: workspace:^
+        version: link:../../packages/bundle/shared-blueprint
       '@deepseek-ai/dsh-skill':
         specifier: workspace:^
         version: link:../../packages/skill/skill
@@ -467,9 +467,6 @@ importers:
       '@deepseek-ai/dsh-bash-sandbox':
         specifier: workspace:*
         version: link:../packages/shell/bash-sandbox
-      '@deepseek-ai/dsh-blueprint-adapter':
-        specifier: workspace:*
-        version: link:../packages/preset/blueprint-adapter
       '@deepseek-ai/dsh-code-runtime-worker-thread':
         specifier: workspace:*
         version: link:../packages/code-runtime/code-runtime-worker-thread
@@ -614,6 +611,9 @@ importers:
       '@deepseek-ai/dsh-settings-file':
         specifier: workspace:*
         version: link:../packages/settings/settings-file
+      '@deepseek-ai/dsh-shared-blueprint':
+        specifier: workspace:*
+        version: link:../packages/bundle/shared-blueprint
       '@deepseek-ai/dsh-shell':
         specifier: workspace:*
         version: link:../packages/shell/shell
@@ -870,9 +870,6 @@ importers:
       '@deepseek-ai/dsh-api-gateway':
         specifier: workspace:^
         version: link:../gateway
-      '@deepseek-ai/dsh-blueprint-adapter':
-        specifier: workspace:^
-        version: link:../../preset/blueprint-adapter
       '@deepseek-ai/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
@@ -906,6 +903,9 @@ importers:
       '@deepseek-ai/dsh-settings':
         specifier: workspace:^
         version: link:../../settings/settings
+      '@deepseek-ai/dsh-shared-blueprint':
+        specifier: workspace:^
+        version: link:../../bundle/shared-blueprint
       '@deepseek-ai/dsh-typert-registry':
         specifier: workspace:^
         version: link:../../typert/registry
@@ -1280,6 +1280,70 @@ importers:
         specifier: workspace:^
         version: link:../../core/session
 
+  packages/bundle/shared-blueprint:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      js-yaml:
+        specifier: ^4.1.0
+        version: 4.2.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:^
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-agent-loop':
+        specifier: workspace:^
+        version: link:../../core/agent-loop
+      '@deepseek-ai/dsh-agent-presets':
+        specifier: workspace:^
+        version: link:../../preset/agent-presets
+      '@deepseek-ai/dsh-atomic-write':
+        specifier: workspace:^
+        version: link:../../util/atomic-write
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-permission-presets':
+        specifier: workspace:^
+        version: link:../../interaction/permission-presets
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:^
+        version: link:../../skill/skill
+      '@deepseek-ai/dsh-subagent':
+        specifier: workspace:^
+        version: link:../../subagent/subagent
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
+
   packages/bundle/web-app:
     dependencies:
       '@deepseek-ai/dsh-agent-presets':
@@ -1291,9 +1355,6 @@ importers:
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:^
         version: link:../../boot/app-boot
-      '@deepseek-ai/dsh-blueprint-adapter':
-        specifier: workspace:^
-        version: link:../../preset/blueprint-adapter
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:^
         version: link:../../client/connection
@@ -1444,6 +1505,9 @@ importers:
       '@deepseek-ai/dsh-session-stats':
         specifier: workspace:^
         version: link:../../session/session-stats
+      '@deepseek-ai/dsh-shared-blueprint':
+        specifier: workspace:^
+        version: link:../shared-blueprint
       '@deepseek-ai/dsh-storage':
         specifier: workspace:^
         version: link:../../storage/storage
@@ -5695,70 +5759,6 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
-
-  packages/preset/blueprint-adapter:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-      js-yaml:
-        specifier: ^4.1.0
-        version: 4.2.0
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/cordis-plugin-include':
-        specifier: workspace:^
-        version: link:../../../vendor/include
-      '@deepseek-ai/cordis-plugin-loader':
-        specifier: workspace:^
-        version: link:../../../vendor/loader
-      '@deepseek-ai/dsh-agent':
-        specifier: workspace:^
-        version: link:../../core/agent
-      '@deepseek-ai/dsh-agent-loop':
-        specifier: workspace:^
-        version: link:../../core/agent-loop
-      '@deepseek-ai/dsh-agent-presets':
-        specifier: workspace:^
-        version: link:../agent-presets
-      '@deepseek-ai/dsh-atomic-write':
-        specifier: workspace:^
-        version: link:../../util/atomic-write
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-llm':
-        specifier: workspace:^
-        version: link:../../llm/llm
-      '@deepseek-ai/dsh-permission-presets':
-        specifier: workspace:^
-        version: link:../../interaction/permission-presets
-      '@deepseek-ai/dsh-session':
-        specifier: workspace:^
-        version: link:../../core/session
-      '@deepseek-ai/dsh-skill':
-        specifier: workspace:^
-        version: link:../../skill/skill
-      '@deepseek-ai/dsh-subagent':
-        specifier: workspace:^
-        version: link:../../subagent/subagent
-      '@deepseek-ai/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../core/system-prompt
-      '@deepseek-ai/dsh-tools':
-        specifier: workspace:^
-        version: link:../../core/tools
-      '@deepseek-ai/dsh-typert-protocol':
-        specifier: workspace:^
-        version: link:../../typert/protocol
-      '@types/js-yaml':
-        specifier: ^4.0.9
-        version: 4.0.9
 
   packages/preset/persona:
     dependencies:

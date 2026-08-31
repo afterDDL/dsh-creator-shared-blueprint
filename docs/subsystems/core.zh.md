@@ -823,7 +823,7 @@ async setCapability(request: BlueprintCapabilityWrite): Promise<Blueprint>
 @Remote async validateSession(request: BlueprintValidateSessionRequest): Promise<BlueprintSessionValidation>
 ```
 
-Source: [`packages/preset/blueprint-adapter/src/index.ts:320`](../../packages/preset/blueprint-adapter/src/index.ts)
+Source: [`packages/bundle/shared-blueprint/src/host/index.ts:320`](../../packages/bundle/shared-blueprint/src/host/index.ts)
 
 <a id="agent-events"></a>
 
