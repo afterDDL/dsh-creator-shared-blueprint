@@ -4,7 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ChatNode, InternalTurnPresentationData,
+  ChatNode, ConversationTurnPresentationData,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { creatorRequest } from './controller.ts'
 
@@ -33,7 +33,7 @@ interface PresetCallEvidenceState {
   readonly presetId: string
 }
 
-type CreatorTurnPresentationData = Partial<InternalTurnPresentationData>
+type CreatorTurnPresentationData = Partial<ConversationTurnPresentationData>
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap {
@@ -237,8 +237,7 @@ export const blueprintCreatorTurnPresentationDefinition: ConversationNodeDefinit
       location: locationOf(context),
       visibility: 'hidden',
       data: context.state.active ? {
-        internalTurnPresentation: 'implementation-only',
-        assistantPresentation: 'assistant-visible',
+        turnPresentation: { visibility: 'hide-context-and-tools' },
       } : {},
     }
     return node

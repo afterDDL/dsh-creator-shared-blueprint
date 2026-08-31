@@ -415,8 +415,9 @@ describe('Blueprint Creator Turn presentation', () => {
       .toMatchObject({
         visibility: 'hidden',
         data: {
-          internalTurnPresentation: 'implementation-only',
-          assistantPresentation: 'assistant-visible',
+          turnPresentation: {
+            visibility: 'hide-context-and-tools',
+          },
         },
       })
     expect(settled.legacy.nodes.map(node => node.kind)).toEqual(['user', 'assistant', 'assistant'])
@@ -549,8 +550,9 @@ describe('Blueprint Creator Turn presentation', () => {
         kind: 'blueprint-creator-turn-presentation',
         visibility: 'hidden',
         data: {
-          internalTurnPresentation: 'implementation-only',
-          assistantPresentation: 'assistant-visible',
+          turnPresentation: {
+            visibility: 'hide-context-and-tools',
+          },
         },
       })
   })
@@ -626,11 +628,11 @@ describe('Blueprint Creator Turn presentation', () => {
     expect(markers.find(node => node.id === 'read-light-laptop-research')).toMatchObject({ data: {} })
     expect(markers.some(node => (
       node.data as {
-        readonly internalTurnPresentation?: string
-        readonly assistantPresentation?: string
+        readonly turnPresentation?: {
+          readonly visibility?: string
+        }
       }
-    ).internalTurnPresentation === 'implementation-only'
-      && (node.data as { readonly assistantPresentation?: string }).assistantPresentation === 'assistant-visible'))
+    ).turnPresentation?.visibility === 'hide-context-and-tools'))
       .toBe(true)
   })
 

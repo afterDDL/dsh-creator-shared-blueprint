@@ -4,7 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  ChatNode, InternalTurnPresentationData,
+  ChatNode, ConversationTurnPresentationData,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 const CAPABILITY_ROUTE_TOOL = 'route_blueprint_capability_authoring'
@@ -28,7 +28,7 @@ interface CapabilityRouteTurnPresentationState {
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ChatNodeDataMap {
     /** Hidden marker that retains human input while suppressing one capability router Turn. */
-    'blueprint-capability-route-turn-presentation': InternalTurnPresentationData
+    'blueprint-capability-route-turn-presentation': ConversationTurnPresentationData
   }
 }
 
@@ -102,8 +102,10 @@ ConversationNodeDefinition<CapabilityRouteTurnPresentationState> = {
       location: locationOf(context),
       visibility: 'hidden',
       data: {
-        internalTurnPresentation: 'implementation-only',
-        runningPresentation: 'configuration',
+        turnPresentation: {
+          visibility: 'human-input-only',
+          activity: 'consumer-owned',
+        },
       },
     }
     return node

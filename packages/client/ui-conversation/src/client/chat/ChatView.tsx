@@ -16,6 +16,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatNodeStore, ConversationTimelineSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
+import type { ConversationTurnPresentationData } from '../contract/chat-nodes.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { formatRunDuration } from './message-chrome.ts'
@@ -103,7 +104,7 @@ function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | 
   return latest
 }
 
-function openTurnUsesConfigurationProgress(timeline: ConversationTimelineSnapshot, nodes: ChatNodeStore): boolean {
+function openTurnUsesConsumerActivity(timeline: ConversationTimelineSnapshot, nodes: ChatNodeStore): boolean {
   const openTurns = new Set([...timeline.turns.values()]
     .filter(turn => turn.status === 'open')
     .map(turn => turn.turn))
@@ -112,9 +113,8 @@ function openTurnUsesConfigurationProgress(timeline: ConversationTimelineSnapsho
     const location = node.location
     if (location.kind !== 'turn' && location.kind !== 'step') return false
     if (!openTurns.has(location.turn?.turn ?? -1)) return false
-    const data = node.data
-    return typeof data === 'object' && data !== null
-      && (data as { readonly runningPresentation?: unknown }).runningPresentation === 'configuration'
+    const data = node.data as Partial<ConversationTurnPresentationData>
+    return data.turnPresentation?.activity === 'consumer-owned'
   })
 }
 
@@ -167,11 +167,11 @@ export function ChatView({
   const timeline = useSession(s => s.chat.timeline)
   const inbox = useSession(s => s.queue)
   const pendingInteractions = useSession(s => s.pending)
-  const turnConfigurationProgress = useSession(s => openTurnUsesConfigurationProgress(s.chat.timeline, s.chat.nodes))
-  const lifecycleConfigurationProgress = useComposerBlock(
-    block => block?.runningPresentation === 'configuration',
+  const turnConsumerActivity = useSession(s => openTurnUsesConsumerActivity(s.chat.timeline, s.chat.nodes))
+  const lifecycleConsumerActivity = useComposerBlock(
+    block => block?.activityPresentation === 'consumer-owned',
   )
-  const configurationProgress = turnConfigurationProgress || lifecycleConfigurationProgress
+  const consumerActivity = turnConsumerActivity || lifecycleConsumerActivity
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
@@ -421,7 +421,7 @@ export function ChatView({
               double-render the same wait. */}
           {/* Turn-level loading signal: rides the whole running turn (first-token
               wait, tool execution, streaming) so it never flickers per step. */}
-          {running && pendingInteractions.length === 0 && !configurationProgress && (
+          {running && pendingInteractions.length === 0 && !consumerActivity && (
             <TurnStatus startTime={runningTurnStart} t={t} />
           )}
           {pendingSteering.map(item => (

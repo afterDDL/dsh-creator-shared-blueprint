@@ -249,8 +249,10 @@ describe('Blueprint capability route Turn presentation', () => {
     )).toMatchObject({
       visibility: 'hidden',
       data: {
-        internalTurnPresentation: 'implementation-only',
-        runningPresentation: 'configuration',
+        turnPresentation: {
+          visibility: 'human-input-only',
+          activity: 'consumer-owned',
+        },
       },
     })
 
@@ -304,8 +306,10 @@ describe('Blueprint capability route Turn presentation', () => {
     )).toMatchObject({
       visibility: 'hidden',
       data: {
-        internalTurnPresentation: 'implementation-only',
-        runningPresentation: 'configuration',
+        turnPresentation: {
+          visibility: 'human-input-only',
+          activity: 'consumer-owned',
+        },
       },
     })
   })

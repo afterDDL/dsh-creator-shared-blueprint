@@ -5,7 +5,9 @@ import type {
   ConversationViewBuilder, ConversationViewDefinition, LegacyConversationSlice,
   PartialAssistant, RunningToolCall,
 } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ChatNode, InternalTurnPresentationData } from '../contract/chat-nodes.ts'
+import type {
+  ChatNode, ConversationTurnPresentationData, ConversationTurnVisibility,
+} from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
 import { hasInternalPresentation } from './common.ts'
 
@@ -133,32 +135,28 @@ function locationCoordinates(location: ConversationLocation): { turn?: number; s
   return {}
 }
 
-type InternalTurnPresentation = 'hide-all' | 'implementation-only' | 'assistant-visible'
-
-function internalInputTurn(node: ChatConversationViewNode): {
+function turnPresentation(node: ChatConversationViewNode): {
   readonly turn: number
-  readonly presentation: InternalTurnPresentation
+  readonly visibility: ConversationTurnVisibility
 } | undefined {
   const turn = locationCoordinates(node.location).turn
   if (turn === undefined) return undefined
   if (node.kind === 'context') {
     const source = (node.data as { readonly source?: unknown }).source
-    if (hasInternalPresentation(source)) return { turn, presentation: 'hide-all' }
+    if (hasInternalPresentation(source)) return { turn, visibility: 'hidden' }
   }
-  const data = node.data as Partial<InternalTurnPresentationData>
-  if (data.internalTurnPresentation !== 'implementation-only') return undefined
-  return {
-    turn,
-    presentation: data.assistantPresentation === 'assistant-visible'
-      ? 'assistant-visible'
-      : 'implementation-only',
-  }
+  const data = node.data as Partial<ConversationTurnPresentationData>
+  const visibility = data.turnPresentation?.visibility
+  return visibility === 'hidden' || visibility === 'human-input-only'
+    || visibility === 'hide-context-and-tools'
+    ? { turn, visibility }
+    : undefined
 }
 
 class InternalTurnProjection {
   private readonly raw = new MutableChatNodeStore()
   private readonly keysByTurn = new Map<number, Set<string>>()
-  private readonly markersByTurn = new Map<number, Map<InternalTurnPresentation, Set<string>>>()
+  private readonly markersByTurn = new Map<number, Map<ConversationTurnVisibility, Set<string>>>()
   private readonly internalKeys = new Set<string>()
 
   get internallyHidden(): ReadonlySet<string> {
@@ -176,7 +174,7 @@ class InternalTurnProjection {
 
   apply(upserts: readonly ChatConversationViewNode[]): readonly ChatConversationViewNode[] {
     const affectedKeys = new Set<string>()
-    const previousMarkerStates = new Map<number, InternalTurnPresentation | undefined>()
+    const previousMarkerStates = new Map<number, ConversationTurnVisibility | undefined>()
     const rememberMarkerState = (turn: number | undefined): void => {
       if (turn === undefined || previousMarkerStates.has(turn)) return
       previousMarkerStates.set(turn, this.turnPresentation(turn))
@@ -184,8 +182,8 @@ class InternalTurnProjection {
 
     for (const node of upserts) {
       const previous = this.raw.get(node.key)
-      rememberMarkerState(previous === undefined ? undefined : internalInputTurn(previous)?.turn)
-      rememberMarkerState(internalInputTurn(node)?.turn)
+      rememberMarkerState(previous === undefined ? undefined : turnPresentation(previous)?.turn)
+      rememberMarkerState(turnPresentation(node)?.turn)
       if (previous !== undefined) this.unindex(previous)
       this.raw.upsert([node])
       this.index(node)
@@ -209,12 +207,12 @@ class InternalTurnProjection {
     const keys = this.keysByTurn.get(turn) ?? new Set<string>()
     keys.add(node.key)
     this.keysByTurn.set(turn, keys)
-    const marker = internalInputTurn(node)
+    const marker = turnPresentation(node)
     if (marker?.turn !== turn) return
-    const presentations = this.markersByTurn.get(turn) ?? new Map<InternalTurnPresentation, Set<string>>()
-    const markers = presentations.get(marker.presentation) ?? new Set<string>()
+    const presentations = this.markersByTurn.get(turn) ?? new Map<ConversationTurnVisibility, Set<string>>()
+    const markers = presentations.get(marker.visibility) ?? new Set<string>()
     markers.add(node.key)
-    presentations.set(marker.presentation, markers)
+    presentations.set(marker.visibility, markers)
     this.markersByTurn.set(turn, presentations)
   }
 
@@ -222,13 +220,13 @@ class InternalTurnProjection {
     const turn = locationCoordinates(node.location).turn
     if (turn === undefined) return
     this.removeIndexKey(this.keysByTurn, turn, node.key)
-    const marker = internalInputTurn(node)
+    const marker = turnPresentation(node)
     if (marker?.turn !== turn) return
     const presentations = this.markersByTurn.get(turn)
-    const markers = presentations?.get(marker.presentation)
+    const markers = presentations?.get(marker.visibility)
     if (presentations === undefined || markers === undefined) return
     markers.delete(node.key)
-    if (markers.size === 0) presentations.delete(marker.presentation)
+    if (markers.size === 0) presentations.delete(marker.visibility)
     if (presentations.size === 0) this.markersByTurn.delete(turn)
   }
 
@@ -239,19 +237,21 @@ class InternalTurnProjection {
     if (keys.size === 0) index.delete(turn)
   }
 
-  private turnPresentation(turn: number): InternalTurnPresentation | undefined {
+  private turnPresentation(turn: number): ConversationTurnVisibility | undefined {
     const presentations = this.markersByTurn.get(turn)
-    if ((presentations?.get('hide-all')?.size ?? 0) > 0) return 'hide-all'
-    if ((presentations?.get('implementation-only')?.size ?? 0) > 0) return 'implementation-only'
-    return (presentations?.get('assistant-visible')?.size ?? 0) > 0 ? 'assistant-visible' : undefined
+    if ((presentations?.get('hidden')?.size ?? 0) > 0) return 'hidden'
+    if ((presentations?.get('human-input-only')?.size ?? 0) > 0) return 'human-input-only'
+    return (presentations?.get('hide-context-and-tools')?.size ?? 0) > 0
+      ? 'hide-context-and-tools'
+      : undefined
   }
 
   private project(node: ChatConversationViewNode): ChatConversationViewNode {
     const turn = locationCoordinates(node.location).turn
     const presentation = turn === undefined ? undefined : this.turnPresentation(turn)
-    const internal = presentation === 'hide-all'
-      || (presentation === 'implementation-only' && node.kind !== 'user' && node.kind !== 'steering')
-      || (presentation === 'assistant-visible' && (node.kind === 'context' || node.kind === 'tool-call'))
+    const internal = presentation === 'hidden'
+      || (presentation === 'human-input-only' && node.kind !== 'user' && node.kind !== 'steering')
+      || (presentation === 'hide-context-and-tools' && (node.kind === 'context' || node.kind === 'tool-call'))
     if (internal) this.internalKeys.add(node.key)
     else this.internalKeys.delete(node.key)
     return internal && node.visibility === 'visible'

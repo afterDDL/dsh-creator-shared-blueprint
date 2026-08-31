@@ -151,7 +151,10 @@ function emptyWorkspaces() {
 
 function makeHarness(init?: Partial<ConversationSnapshot>) {
   const { set, source } = makeSource(init)
-  const composerBlock = createSnapshotStore<{ reason: string; runningPresentation?: 'configuration' } | undefined>(undefined)
+  const composerBlock = createSnapshotStore<{
+    reason: string
+    activityPresentation?: 'consumer-owned'
+  } | undefined>(undefined)
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => void>()
   const loadOlder = vi.fn()
@@ -880,7 +883,7 @@ describe('ChatView', () => {
     expect(view.getByRole('status').textContent).toBe('Deep diving...')
   })
 
-  it('keeps Creator reasoning independent from hidden implementation rows across the question lifecycle', () => {
+  it('keeps ordinary reasoning independent from an external workflow presentation across a question lifecycle', () => {
     const base = chatSnapshotFixture({
       partial: {
         turn: 2,
@@ -894,9 +897,9 @@ describe('ChatView', () => {
     })
     const marker = {
       key: 'creator-presentation', id: 'creator-presentation', target: 'chat',
-      kind: 'blueprint-creator-turn-presentation', anchorSeq: 2,
+      kind: 'external-workflow-turn-presentation', anchorSeq: 2,
       location: { kind: 'turn', turn: base.timeline.turns.get(2) },
-      visibility: 'hidden', data: { internalTurnPresentation: 'implementation-only' },
+      visibility: 'hidden', data: { turnPresentation: { visibility: 'hide-context-and-tools' } },
     } as never
     const chat = {
       ...base,
@@ -929,15 +932,15 @@ describe('ChatView', () => {
     expect(view.queryByRole('status')).toBeNull()
   })
 
-  it('lets capability configuration progress replace the generic reasoning indicator', () => {
+  it('lets an external workflow activity replace the generic reasoning indicator', () => {
     const base = chatSnapshotFixture({ turnTimings: new Map([[2, { startTime: Date.now() }]]) })
     const marker = {
       key: 'capability-presentation', id: 'capability-presentation', target: 'chat',
-      kind: 'blueprint-capability-route-turn-presentation', anchorSeq: 2,
+      kind: 'external-workflow-turn-presentation', anchorSeq: 2,
       location: { kind: 'turn', turn: base.timeline.turns.get(2) },
-      visibility: 'hidden', data: {
-        internalTurnPresentation: 'implementation-only', runningPresentation: 'configuration',
-      },
+      visibility: 'hidden', data: { turnPresentation: {
+        visibility: 'human-input-only', activity: 'consumer-owned',
+      } },
     } as never
     const chat = {
       ...base,
@@ -952,9 +955,9 @@ describe('ChatView', () => {
     expect(view.queryByText('Deep diving...')).toBeNull()
   })
 
-  it('lets lifecycle configuration progress suppress generic reasoning before its durable marker arrives', () => {
+  it('lets a consumer-owned composer status suppress generic reasoning before its durable marker arrives', () => {
     const h = makeHarness()
-    act(() => { h.setComposerBlock({ reason: '正在配置能力…', runningPresentation: 'configuration' }) })
+    act(() => { h.setComposerBlock({ reason: 'Preparing workflow…', activityPresentation: 'consumer-owned' }) })
     const view = render(<h.ChatView {...h.props} />)
 
     act(() => { h.set({ running: true }) })

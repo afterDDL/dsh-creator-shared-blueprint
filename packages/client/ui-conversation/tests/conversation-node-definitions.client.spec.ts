@@ -17,11 +17,11 @@ import { turnErrorDefinition } from '../src/client/conversation-nodes/turn-error
 import { turnMaxTokensDefinition } from '../src/client/conversation-nodes/turn-max-tokens.ts'
 import { turnTailDefinition } from '../src/client/conversation-nodes/turn-tail.ts'
 import type {
-  AssistantChatData, InternalTurnPresentationData, ManualCompactionChatData, RetryChatData,
+  AssistantChatData, ConversationTurnPresentationData, ManualCompactionChatData, RetryChatData,
   ToolChatData, TurnTailChatData,
 } from '../src/client/contract/chat-nodes.ts'
 
-const IMPLEMENTATION_MARKER_PLUGIN = 'test-implementation-turn-presentation'
+const IMPLEMENTATION_MARKER_PLUGIN = 'external-workflow-presentation'
 
 const implementationTurnPresentationDefinition: ConversationNodeDefinition<number> = {
   kind: 'test-implementation-turn-presentation',
@@ -35,7 +35,9 @@ const implementationTurnPresentationDefinition: ConversationNodeDefinition<numbe
   update: context => context.state,
   buildViewNode: (context) => {
     if (context.state === undefined) return null
-    const data: InternalTurnPresentationData = { internalTurnPresentation: 'implementation-only' }
+    const data: ConversationTurnPresentationData = {
+      turnPresentation: { visibility: 'human-input-only' },
+    }
     return {
       key: context.key,
       kind: 'test-implementation-turn-presentation',

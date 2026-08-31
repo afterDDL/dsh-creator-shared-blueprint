@@ -3,6 +3,7 @@ import { BlueprintCapabilityComposerBlockProjection } from '../src/client/capabi
 
 interface Block {
   readonly reason: string
+  readonly activityPresentation?: 'consumer-owned'
 }
 
 class ComposerBlocksDouble {
@@ -39,12 +40,12 @@ describe('Blueprint capability composer block projection', () => {
 
     projection.sync(['source-cordis'], new Set())
     expect(blocks.read('source-cordis')).toEqual({
-      reason: '正在配置能力…', runningPresentation: 'configuration',
+      reason: '正在配置能力…', activityPresentation: 'consumer-owned',
     })
 
     blocks.set('source-cordis', undefined)
     expect(blocks.read('source-cordis')).toEqual({
-      reason: '正在配置能力…', runningPresentation: 'configuration',
+      reason: '正在配置能力…', activityPresentation: 'consumer-owned',
     })
 
     projection.sync([], new Set())

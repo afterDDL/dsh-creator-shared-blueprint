@@ -24,8 +24,8 @@ export interface ComposerBlock {
    * that raised the block.
    */
   readonly reason: string
-  /** Running indicator owned by the blocking lifecycle, when generic model activity must yield to it. */
-  readonly runningPresentation?: 'configuration'
+  /** Suppress generic model activity while the blocking plugin presents its own status. */
+  readonly activityPresentation?: 'consumer-owned'
 }
 
 /** The registry face other plugins reach through `ctx.conversation.blocks`. */
@@ -62,7 +62,7 @@ export class ComposerBlockRegistry implements ComposerBlocks {
     const store = this.storeFor(sessionId)
     const current = store.getSnapshot()
     if (current?.reason === block?.reason
-      && current?.runningPresentation === block?.runningPresentation) return
+      && current?.activityPresentation === block?.activityPresentation) return
     store.set(block)
   }
 

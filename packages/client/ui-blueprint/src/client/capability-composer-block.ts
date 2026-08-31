@@ -1,6 +1,6 @@
 interface CapabilityComposerBlock {
   readonly reason: string
-  readonly runningPresentation?: 'configuration'
+  readonly activityPresentation?: 'consumer-owned'
 }
 
 interface CapabilityComposerBlockStore {
@@ -20,7 +20,7 @@ interface CapabilityComposerBlockLease {
 
 const CAPABILITY_COMPOSER_BLOCK: CapabilityComposerBlock = {
   reason: '正在配置能力…',
-  runningPresentation: 'configuration',
+  activityPresentation: 'consumer-owned',
 }
 
 /** Keep active capability source blocks resident when another input owner republishes its state. */
@@ -43,7 +43,7 @@ export class BlueprintCapabilityComposerBlockProjection {
       lease.stop()
       const current = lease.store.getSnapshot()
       if (current?.reason === CAPABILITY_COMPOSER_BLOCK.reason
-        && current.runningPresentation === CAPABILITY_COMPOSER_BLOCK.runningPresentation) {
+        && current.activityPresentation === CAPABILITY_COMPOSER_BLOCK.activityPresentation) {
         this.blocks.set(sessionId, undefined)
       }
     }
@@ -68,7 +68,7 @@ export class BlueprintCapabilityComposerBlockProjection {
     const lease = this.leases.get(sessionId)
     const current = lease?.store.getSnapshot()
     if (lease === undefined || (current?.reason === CAPABILITY_COMPOSER_BLOCK.reason
-      && current.runningPresentation === CAPABILITY_COMPOSER_BLOCK.runningPresentation)) return
+      && current.activityPresentation === CAPABILITY_COMPOSER_BLOCK.activityPresentation)) return
     this.blocks.set(sessionId, CAPABILITY_COMPOSER_BLOCK)
   }
 }

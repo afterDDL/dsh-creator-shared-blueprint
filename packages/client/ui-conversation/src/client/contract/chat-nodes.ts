@@ -50,13 +50,23 @@ export interface RetryChatData {
   readonly current: ModelRetryNode
 }
 
-/** Client-only marker that suppresses implementation rows while retaining human input in one Turn. */
-export interface InternalTurnPresentationData {
-  readonly internalTurnPresentation: 'implementation-only'
-  /** Preserve ordinary Assistant presentation while internal Context and Tool rows stay hidden. */
-  readonly assistantPresentation?: 'assistant-visible'
-  /** User-level configuration progress replaces the generic reasoning indicator. */
-  readonly runningPresentation?: 'configuration'
+/** Visibility policies a contributed Chat node can apply to every row in its Turn. */
+export type ConversationTurnVisibility =
+  | 'hidden'
+  | 'human-input-only'
+  | 'hide-context-and-tools'
+
+/** Generic presentation directive carried by a contributed Chat node. */
+export interface ConversationTurnPresentation {
+  /** Which built-in rows remain user-visible for the directive's Turn. */
+  readonly visibility: ConversationTurnVisibility
+  /** Suppress generic model activity because the contributing plugin presents its own status. */
+  readonly activity?: 'consumer-owned'
+}
+
+/** Payload mixin for Chat nodes that contribute one Turn presentation directive. */
+export interface ConversationTurnPresentationData {
+  readonly turnPresentation: ConversationTurnPresentation
 }
 
 /** Turn-local footer row that owns actions and optional feature contributions. */
