@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/preset/blueprint-adapter/README.md
-README.md: 4c99bec227ec084ff7ae4db9deb30d1665074895
-README.zh.md: 004d95f175421f95961f8e2ea83d7f748eea972f
+README.md: f258dbd06ebbf35d8239907c7af1148434b67e85
+README.zh.md: dddd2b43c20195f37bf698ec38544f548af5f31e

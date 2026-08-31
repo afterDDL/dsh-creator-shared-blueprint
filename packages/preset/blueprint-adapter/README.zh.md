@@ -4,6 +4,8 @@
 
 Interactive Blueprint 的 Host 服务。`ctx.blueprintAdapter.read(presetId, { agent? })` 会把真实 agent preset、带 scope 的 `systemPrompt.assemble()` 结果，以及未来会话或现有会话的权限 preset 投影到一起。没有 live agent 时，它通过一次 AgentPresets projection snapshot 同时取得已提交 metadata、组装文本与一个常驻 scope key，并为 assembly 与 Skill 读取复用该 key。它支持 Purpose、Identity、Capabilities、Behavior、Output 与 Access；原始状态中不存在的段落不会被补造出来。
 
+服务启动期间，adapter 会以该 package 的 npm 身份注册自己所需的持久 Session event type。同一条注册路径既适用于被打入 DSH build 的 package，也适用于仓库外安装；冲突 owner 或重复的 live adapter 会在任何 Blueprint Session 被解码前使 composition 失败。
+
 每个节点都包含 `id`、`type`、`value`、`source`、`status`、`editable` 与 `adapterRef`。`source` 区分 preset 文本、runtime 组装状态、继承自 Host/会话的策略，以及从 persona 文本语义分类得出的值。可选 `sourceLanguage` 是开放 metadata，只根据已编写 semantic text 中可识别的 Unicode script 证据推导；无法确定的拉丁文字不会被标成英文。client 会独立选择固定 Blueprint label 的译文，绝不会翻译 Tool、provider、Skill、配置 id 或 semantic value。根级 `revision` 是 composition 文本的 SHA-256；`runtime` 保留用于验证投影的确切工具名、提示词段落名与权限组合。
 
 Capability 投影还会读取 target preset 带 scope 的 `ctx.skills` snapshot 与 active literal `tool-subagent` composition row。Skill 节点展示 identity、简短 description、invocation policy 与 scoped ownership，同时由 Host 内部保留 definition digest。Delegation 节点描述已配置的 Tool name、provider、one-shot 或 continuable 模式、persona 摘要与 provider availability；其 runtime summary 还会保留完整 parsed row config 的 SHA-256，包括嵌套的 `agentOptions`、`toolFilter`、`maxDepth` 与未求值的 `!!js` expression node。`maxDepth: 0` 的 active row 无法发起第一次 child 调用，因此会报告为 mapping gap，而不是可用 delegation。两类节点目前都只读：现有 Skill registry 没有 per-preset mutation API，而 delegation row 的变更无法在保留任意 Loader expression 与 provider lifecycle 状态的同时保证安全。

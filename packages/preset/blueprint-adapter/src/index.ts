@@ -39,6 +39,7 @@ import { validateRuntimeConformance } from './conformance.ts'
 import { prepareCreatorHandoff, startExclusiveCreator, stopAcceptedCreatorRoute } from './creator-handoff.ts'
 import { resolveDurableCapabilityAuthoring } from './capability-authority.ts'
 import { creatorTerminalEvidence } from './creator-lifecycle.ts'
+import { registerBlueprintSessionEventTypes } from './session-events.ts'
 import {
   cleanupCapabilityCandidate,
   commitCapabilityCandidate,
@@ -491,6 +492,10 @@ export class BlueprintAdapter extends TypertRemoteService {
 
   constructor(ctx: Context, public config: Config = {}) {
     super(ctx, 'blueprintAdapter', { namespace: 'blueprint' })
+    ctx.effect(
+      () => registerBlueprintSessionEventTypes(ctx),
+      'blueprint-adapter: durable Session event vocabulary',
+    )
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'turn/end') return
       const sessionId = String(session.id)
