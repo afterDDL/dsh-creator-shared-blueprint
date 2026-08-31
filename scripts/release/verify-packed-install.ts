@@ -22,7 +22,7 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { releaseFamily } from './families.ts'
-import { capture, isEntry } from './process.ts'
+import { capture, isEntry, npmInvocation } from './process.ts'
 import { packedIdentity } from './tarball.ts'
 
 /**
@@ -104,8 +104,8 @@ function main(): void {
     // that cannot install them must still start — which is what optional means
     // here. Their entry package is a plain dependency of dsh-sandbox-local, so
     // its tarball is supplied through --from.
-    capture('npm', ['install', '--no-audit', '--no-fund', '--package-lock=false', '--omit=optional'],
-      { cwd: consumerRoot, env: environment })
+    const npm = npmInvocation(['install', '--no-audit', '--no-fund', '--package-lock=false', '--omit=optional'])
+    capture(npm.command, npm.args, { cwd: consumerRoot, env: environment })
 
     const bin = join(consumerRoot, 'node_modules', ...entry.packageName.split('/'), entry.binPath)
     const version = capture(process.execPath, [bin, '--version'], { cwd: consumerRoot, env: environment })

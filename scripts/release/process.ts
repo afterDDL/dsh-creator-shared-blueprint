@@ -4,7 +4,8 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** Where and with what environment a release step runs a command. */
@@ -23,6 +24,35 @@ export interface CommandResult {
   readonly stdout: string
   /** Captured standard error. */
   readonly stderr: string
+}
+
+/** One executable plus arguments ready for a direct Node child-process call. */
+export interface CommandInvocation {
+  /** Executable passed to `spawnSync`. */
+  readonly command: string
+  /** Arguments passed without shell interpolation. */
+  readonly args: readonly string[]
+}
+
+/**
+ * Resolve npm without relying on Windows command-script execution.
+ *
+ * Windows installs expose npm through `.cmd` and PowerShell wrappers, neither
+ * of which is a native executable accepted by `spawnSync` without a shell. The
+ * bundled JavaScript CLI runs under the current Node executable and preserves
+ * the same argument and environment semantics without command interpolation.
+ * @param args - npm CLI arguments.
+ * @returns A native executable and argument vector for `spawnSync`.
+ */
+export function npmInvocation(args: readonly string[]): CommandInvocation {
+  if (process.platform !== 'win32') return { command: 'npm', args }
+  const roots = [dirname(process.execPath), ...(process.env.PATH ?? '').split(delimiter)]
+  for (const root of new Set(roots)) {
+    if (root === '') continue
+    const cli = join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    if (existsSync(cli)) return { command: process.execPath, args: [cli, ...args] }
+  }
+  throw new Error('cannot locate npm-cli.js beside Node or on PATH')
 }
 
 /**
