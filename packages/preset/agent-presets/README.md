@@ -19,6 +19,15 @@ Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every cal
 - `ctx.agentPresets.recompose(agentCtx, id): Promise<AgentPreset>` Re-link one agent to a different preset's standing composition. Valid only while the agent has produced nothing — **the caller owns that check**; the new mount is ensured before the link moves, so a failure leaves the agent as it was. Refuses a broken preset like `mount()`.
 - `ctx.agentPresets.standingKeyFor(id?): Promise<ScopeKey>` The standing scope key a host reader with no agent (a cold transcript read) resolves preset registrations in; ensures the mount without starting an agent, session, or turn. Refuses a broken preset like `mount()`.
 - `ctx.agentPresets.projectionSnapshot(id?): Promise<AgentPresetProjectionSnapshot>` Resolve committed metadata, read its composition, and ensure the matching standing generation under one preset publication exclusion. Host projections reuse the returned `standingKey` for every registry read, so one result cannot mix composition text and registrations from different publications.
+- `ctx.agentPresets.prepareTransaction(id, options): Promise<AgentPresetTransaction>` Clone one writable committed preset into isolated storage after checking the caller's expected composition revision. `options.key` is a stable plugin-owned request identity used to re-adopt the same transaction after retry or restart.
+- `ctx.agentPresets.resolveTransaction(transaction): Promise<AgentPreset>` Resolve the isolated candidate without publishing it through `list()`, `resolve()`, `read()`, or `projectionSnapshot()`.
+- `ctx.agentPresets.fenceTransaction(transaction): Promise<string>` Return a stable complete-tree digest for external inspection and validation.
+- `ctx.agentPresets.publishTransaction(transaction, digest): Promise<AgentPresetTransactionDisposition>` Compare the committed tree with the preparation baseline, atomically publish the validated candidate, and refresh the standing generation for future Sessions.
+- `ctx.agentPresets.discardTransaction(transaction, digest): Promise<AgentPresetTransactionDisposition>` Record a terminal no-publication disposition while proving the committed baseline stayed unchanged.
+- `ctx.agentPresets.recoverTransaction(transaction): Promise<AgentPresetTransactionRecovery>` Idempotently complete interrupted preparation, publication, or discard from the filesystem journal.
+- `ctx.agentPresets.cleanupTransaction(transaction): Promise<void>` Remove isolated storage after the consuming plugin has durably recorded the returned terminal disposition.
+- `ctx.agentPresets.registerScopedOverlay(agentCtx, preset): () => Promise<void>` Project one private preset path only through that scoped agent's `listFor`/`resolveFor`/`readFor`/`validateFor` calls. Ordinary committed readers remain unchanged.
+- `ctx.agentPresets.mountIsolated(agentCtx, preset): Promise<AgentPreset>` Mount an exact isolated preset for one fresh agent without adding it to the standing generation map.
 - `ctx.agentPresets.roots: readonly PresetRoot[]` The roots this roster scans — every configured root in order, then the derived harness-home root. Not `config.roots`: read this to answer whether a roster is composed at all, so one derivation decides it.
 - `ctx.agentPresets.authorable: boolean` Whether any of those roots has `user` trust, and therefore whether a preset can be created at all.
 - `ctx.agentPresets.read(id): Promise<string>` One preset's composition text, exactly as stored.
@@ -26,6 +35,16 @@ Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every cal
 - `ctx.agentPresets.remove(id): Promise<void>` Delete a locally authored preset; joined sessions keep their standing mount. Clears the user default when it named the preset just deleted: storing a default that does not exist yet is deliberate, but one this call removed will never be supplied again and would fail every session created without an explicit pick.
 
 `AgentPreset` carries `id` (the directory name), `trust` (`system` or `user`, from the root it was found under), `path` (the absolute composition file), and — only when the preset cannot compose a session — `broken` (one human-readable reason, shown verbatim on roster surfaces).
+
+### Isolated preset transactions
+
+The transaction service owns filesystem isolation and publication, not what a candidate means. A consumer prepares against an accepted composition revision, edits the `AgentPreset` returned by `resolveTransaction()`, validates that candidate through its own policy and optionally `mountIsolated()`, fences the complete tree, then publishes only that digest. Skill, delegation, workflow, or other feature semantics remain in the consuming plugin.
+
+Committed readers never address the hidden candidate directory. Publication runs under the roster and target-preset filesystem gates, compares the complete committed tree with the preparation baseline, parks that baseline, renames the candidate into the formal path, and invalidates the standing pointer before readers resume. Existing agents keep their old generation; the next agent receives the published one.
+
+The journal is stored beside the target preset under `.agent-preset-transaction-<sha256>`. Preparation, publication, discard, and cleanup are separately recoverable. A process restart calls `recoverTransaction()` with the durable handle stored by the consumer; a removed consumer leaves an unknown hidden directory rather than weakening committed reads. Cancellation is explicit: the consumer fences and calls `discardTransaction()`, durably records the returned disposition, then calls `cleanupTransaction()`.
+
+`runLegacyPublication()` is an internal migration hook for plugins that already persisted their own pre-transaction rename journal. It admits no new transaction semantics and must not be used by new consumers.
 
 ### Where to call `mount()`
 

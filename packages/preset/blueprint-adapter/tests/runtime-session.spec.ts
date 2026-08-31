@@ -24,6 +24,7 @@ import BlueprintAdapter, {
   BLUEPRINT_PROPOSAL_TOOL,
 } from '../src/index.ts'
 import { capabilityAuthoringCreatorSessionId } from '../src/capability-authority.ts'
+import { prepareCapabilityCandidate, resolveCapabilityCandidatePreset } from '../src/capability-candidate.ts'
 import { blueprintChangeSetOperations } from '../src/proposal.ts'
 import type {
   Blueprint,
@@ -1140,6 +1141,8 @@ ${scenario === 'multiple' ? `- id: policy-research
       expect(authoring?.type).toBe('blueprint/capability-authoring')
       if (authoring?.type !== 'blueprint/capability-authoring') throw new Error('Expected capability authoring event')
       expect(authoring.data).toMatchObject({ state: 'started', targetPresetId: 'competitive-research' })
+      expect(await candidatePresetPath(ctx, handle.agent, 'competitive-research'))
+        .toContain(`.agent-preset-transaction-${authoring.data.candidate.transactionId}`)
 
       const staleNormalRoute = await ctx.blueprintAdapter.setConversationContext({
         sessionId: String(handle.agent.session.id),
@@ -1187,6 +1190,84 @@ ${scenario === 'multiple' ? `- id: policy-research
           startSeq: 0, state: 'ended', endSeq: cancellationSeq, outcome: 'cancelled',
         },
       })
+    } finally {
+      await ctx.fiber.dispose()
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('recovers an already-durable background Creator candidate through the legacy reader only', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-blueprint-legacy-candidate-recovery-'))
+    for (const presetId of ['cordis', 'kaoyan-choose']) {
+      const presetDir = join(root, presetId)
+      await mkdir(presetDir)
+      await writeFile(join(presetDir, 'agent.cordis.yml'), composition(), 'utf8')
+    }
+    const ctx = await harness(root)
+    try {
+      const seed = await ctx.agents.create({
+        sessionId: SessionId('legacy-candidate-seed'),
+        meta: { agentPreset: 'cordis' },
+        setup: async agentCtx => void await ctx.agentPresets.mount(agentCtx, 'cordis'),
+      })
+      const target = await ctx.blueprintAdapter.read('kaoyan-choose')
+      await ctx.blueprintAdapter.setConversationContext({
+        sessionId: String(seed.agent.id),
+        capabilityAuthoring: recordDurableCapabilityRoute(ctx, {
+          routeId: 'generic-seed-route',
+          sourceSessionId: String(seed.agent.id),
+          target,
+          kind: 'skill',
+          request: 'seed lifecycle metadata',
+        }),
+      })
+      const seedStart = seed.agent.session.events.find(event => event.type === 'blueprint/capability-authoring'
+        && event.data.state === 'started')
+      if (seedStart?.type !== 'blueprint/capability-authoring' || seedStart.data.state !== 'started') {
+        throw new Error('Expected generic seed capability lifecycle')
+      }
+      await ctx.blueprintAdapter.setConversationContext({
+        sessionId: String(seed.agent.id),
+        capabilityAuthoringEnd: { outcome: 'cancelled' },
+      })
+
+      const legacySourceSessionId = 'legacy-capability-source'
+      const legacyRouteId = 'legacy-capability-route'
+      const legacy = await ctx.agents.create({
+        sessionId: SessionId(capabilityAuthoringCreatorSessionId(legacySourceSessionId, legacyRouteId)),
+        meta: { agentPreset: 'cordis' },
+        setup: async agentCtx => void await ctx.agentPresets.mount(agentCtx, 'cordis'),
+      })
+      const formal = await ctx.agentPresets.resolve('kaoyan-choose')
+      const candidate = await prepareCapabilityCandidate(formal, {
+        creatorSessionId: String(legacy.agent.id),
+        sourceSessionId: legacySourceSessionId,
+        routeId: legacyRouteId,
+        targetPresetId: 'kaoyan-choose',
+        baseRevision: target.revision,
+      })
+      legacy.agent.session.append('blueprint/capability-authoring', {
+        ...seedStart.data,
+        routeId: legacyRouteId,
+        sourceSessionId: legacySourceSessionId,
+        request: 'resume an existing legacy candidate',
+        candidate,
+      })
+
+      const recovered = await ctx.blueprintAdapter.setConversationContext({
+        sessionId: String(legacy.agent.id),
+        recoverCapabilityAuthoring: true,
+      })
+      expect(recovered.capabilityAuthoringRecord).toMatchObject({
+        routeId: legacyRouteId, state: 'active', targetPresetId: 'kaoyan-choose',
+      })
+      expect((await resolveCapabilityCandidatePreset(formal, candidate)).path)
+        .toContain(`.blueprint-capability-${candidate.transactionId}`)
+      await ctx.blueprintAdapter.setConversationContext({
+        sessionId: String(legacy.agent.id),
+        capabilityAuthoringEnd: { outcome: 'cancelled' },
+      })
+      await expect(resolveCapabilityCandidatePreset(formal, candidate)).rejects.toThrow()
     } finally {
       await ctx.fiber.dispose()
       await rm(root, { recursive: true, force: true })
@@ -2054,8 +2135,8 @@ ${scenario === 'multiple' ? `- id: policy-research
   })
 
   it.each([
-    { label: 'one transient failure', failedCalls: [2], outcome: 'completed' as const },
-    { label: 'exhausted failures', failedCalls: [2, 4], outcome: 'failed' as const },
+    { label: 'one transient failure', failedCalls: [1], outcome: 'completed' as const },
+    { label: 'exhausted failures', failedCalls: [1, 2], outcome: 'failed' as const },
   ])('bounds verified candidate publication after $label', async ({ failedCalls, outcome }) => {
     const root = await mkdtemp(join(tmpdir(), `dsh-blueprint-publication-${outcome}-`))
     for (const presetId of ['cordis', 'kaoyan-choose']) {
@@ -2090,12 +2171,12 @@ ${scenario === 'multiple' ? `- id: policy-research
       await mkdir(skillRoot, { recursive: true })
       await writeFile(join(skillRoot, 'SKILL.md'), filesystemSkillDefinition('csv-metrics'))
       await writeFile(candidatePath, `${composition()}${filesystemSkillCompositionRows()}`)
-      const originalRunPublication = ctx.agentPresets.runPublication.bind(ctx.agentPresets)
+      const originalPublishTransaction = ctx.agentPresets.publishTransaction.bind(ctx.agentPresets)
       let publicationCalls = 0
-      const publication = vi.spyOn(ctx.agentPresets, 'runPublication').mockImplementation((presetId, task) => {
+      const publication = vi.spyOn(ctx.agentPresets, 'publishTransaction').mockImplementation((transaction, digest) => {
         publicationCalls += 1
         if (failedCalls.includes(publicationCalls)) return Promise.reject(new Error('injected publication failure'))
-        return originalRunPublication(presetId, task)
+        return originalPublishTransaction(transaction, digest)
       })
       restorePublication = () => { publication.mockRestore() }
 
@@ -2121,12 +2202,12 @@ ${scenario === 'multiple' ? `- id: policy-research
       expect(publicRecord).not.toHaveProperty('capabilityFailure')
       expect(publicRecord).not.toHaveProperty('candidateDisposition')
       if (outcome === 'completed') {
-        expect(publicationCalls).toBeGreaterThanOrEqual(4)
+        expect(publicationCalls).toBe(2)
         expect((await ctx.blueprintAdapter.read('kaoyan-choose', { cwd: root })).nodes).toContainEqual(
           expect.objectContaining({ id: 'capability:skill:csv-metrics', status: 'active' }),
         )
       } else {
-        expect(publicationCalls).toBeGreaterThanOrEqual(5)
+        expect(publicationCalls).toBe(2)
         expect(await readFile(join(root, 'kaoyan-choose', 'agent.cordis.yml'), 'utf8')).toBe(formalComposition)
         const unchanged = await ctx.blueprintAdapter.read('kaoyan-choose', { cwd: root })
         expect(unchanged.revision).toBe(baseline.revision)

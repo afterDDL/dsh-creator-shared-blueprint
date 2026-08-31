@@ -12,6 +12,10 @@ import type {
   BlueprintCapabilityCandidateDisposition,
 } from './types.ts'
 
+/* jscpd:ignore-start -- frozen reader for already-durable .blueprint-capability
+ * journals intentionally retains the pre-seam filesystem algorithm. New
+ * lifecycles use AgentPresets transactions; changing this copy risks making a
+ * parked legacy baseline unrecoverable before its compatibility horizon ends. */
 const TRANSACTION_PREFIX = '.blueprint-capability-'
 const JOURNAL_FILE = 'journal.json'
 const SHA256 = /^[0-9a-f]{64}$/u
@@ -624,6 +628,8 @@ export async function fenceCapabilityCandidate(
   return first
 }
 
+/* jscpd:ignore-end */
+
 /**
  * Prove a verified candidate changed only files admitted for its capability kind.
  * @param preset - unchanged formal preset providing the baseline tree.
@@ -638,24 +644,60 @@ export async function assertCapabilityCandidateTreeDelta(
   expected: CapabilityCandidateTreeDelta,
 ): Promise<void> {
   assertPreset(preset, candidate)
-  requireDigest(candidateTreeDigest, 'candidateTreeDigest')
-  if (expected.kind === 'skill' && !isSkillName(expected.skillName)) {
-    throw new Error('capability candidate: verified Skill name is invalid')
-  }
   const paths = pathsForCandidate(candidate)
   const journal = await readJournal(paths)
   assertJournal(journal, candidate)
   if (journal.phase !== 'active') throw new Error('capability candidate: tree delta requires an active candidate')
-  await assertTreeDigest(paths.target, candidate.baselineTreeDigest, 'formal baseline before delta proof')
-  await assertTreeDigest(paths.candidate, candidateTreeDigest, 'verified candidate before delta proof')
+  await assertCapabilityPresetTreeDelta(
+    preset,
+    presetAt(preset, join(paths.candidate, paths.compositionName)),
+    candidate,
+    candidateTreeDigest,
+    expected,
+  )
+}
+
+/**
+ * Prove a projected candidate changed only files admitted by one capability request.
+ *
+ * The candidate path comes from the AgentPresets transaction service; this
+ * adapter owns only Skill/Subagent policy and never derives generic transaction
+ * storage paths for newly-created lifecycles.
+ * @param preset - unchanged committed preset providing the baseline tree.
+ * @param candidatePreset - isolated preset projection returned by AgentPresets.
+ * @param transaction - durable transaction evidence retained by the lifecycle.
+ * @param candidateTreeDigest - digest retained across fresh runtime verification.
+ * @param expected - Subagent or Skill delta supported by verified runtime evidence.
+ */
+export async function assertCapabilityPresetTreeDelta(
+  preset: AgentPreset,
+  candidatePreset: AgentPreset,
+  transaction: BlueprintCapabilityCandidate,
+  candidateTreeDigest: string,
+  expected: CapabilityCandidateTreeDelta,
+): Promise<void> {
+  assertPreset(preset, transaction)
+  requireDigest(candidateTreeDigest, 'candidateTreeDigest')
+  if (candidatePreset.id !== preset.id || candidatePreset.trust !== preset.trust
+    || basename(candidatePreset.path) !== basename(preset.path)) {
+    throw new Error('capability candidate: projected preset does not match the committed target')
+  }
+  if (expected.kind === 'skill' && !isSkillName(expected.skillName)) {
+    throw new Error('capability candidate: verified Skill name is invalid')
+  }
+  const target = dirname(preset.path)
+  const authoredDirectory = dirname(candidatePreset.path)
+  const compositionName = basename(preset.path)
+  await assertTreeDigest(target, transaction.baselineTreeDigest, 'formal baseline before delta proof')
+  await assertTreeDigest(authoredDirectory, candidateTreeDigest, 'verified candidate before delta proof')
   const [baseline, authored] = await Promise.all([
-    treeManifest(paths.target), treeManifest(paths.candidate),
+    treeManifest(target), treeManifest(authoredDirectory),
   ])
-  await assertTreeDigest(paths.target, candidate.baselineTreeDigest, 'formal baseline after delta proof')
-  await assertTreeDigest(paths.candidate, candidateTreeDigest, 'verified candidate after delta proof')
+  await assertTreeDigest(target, transaction.baselineTreeDigest, 'formal baseline after delta proof')
+  await assertTreeDigest(authoredDirectory, candidateTreeDigest, 'verified candidate after delta proof')
   const [baselineComposition, candidateComposition] = await Promise.all([
-    readFile(join(paths.target, paths.compositionName), 'utf8'),
-    readFile(join(paths.candidate, paths.compositionName), 'utf8'),
+    readFile(join(target, compositionName), 'utf8'),
+    readFile(join(authoredDirectory, compositionName), 'utf8'),
   ])
   const compositionDelta = assertCapabilityCompositionDelta(
     baselineComposition,
@@ -672,7 +714,7 @@ export async function assertCapabilityCandidateTreeDelta(
     if (authoredEntry === undefined) {
       throw new Error(`capability candidate: baseline entry ${JSON.stringify(path)} was removed`)
     }
-    if (path === paths.compositionName) {
+    if (path === compositionName) {
       if (baselineEntry.kind !== 'file' || authoredEntry.kind !== 'file'
         || baselineEntry.mode !== authoredEntry.mode) {
         throw new Error('capability candidate: composition entry type or mode changed')

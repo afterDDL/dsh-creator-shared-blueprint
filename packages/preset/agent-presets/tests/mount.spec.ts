@@ -721,7 +721,7 @@ describe('editing a composition file', () => {
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
 
-    const publication = scoped.agentPresets.runPublication('publication-guarded', async () => {
+    const publication = scoped.agentPresets.runLegacyPublication('publication-guarded', async () => {
       await rename(target, baseline)
       entered.resolve(undefined)
       await release.promise
@@ -782,7 +782,7 @@ describe('editing a composition file', () => {
     await writeFile(join(replacement, COMPOSITION_FILE), rowFor('after'))
     const entered = Promise.withResolvers<undefined>()
     const release = Promise.withResolvers<undefined>()
-    const publication = scoped.agentPresets.runPublication('publication-removed', async () => {
+    const publication = scoped.agentPresets.runLegacyPublication('publication-removed', async () => {
       await rename(target, baseline)
       entered.resolve(undefined)
       await release.promise
@@ -870,7 +870,7 @@ describe('route-scoped authoring candidates', () => {
     const creator = createScope(ctx, { creator: 'overlay-owner' })
     const bystander = createScope(ctx, { creator: 'other' })
     const committedPath = (await ctx.agentPresets.resolve('standard')).path
-    const dispose = ctx.agentPresets.registerAuthoringOverlay(creator.ctx, authored.preset)
+    const dispose = ctx.agentPresets.registerScopedOverlay(creator.ctx, authored.preset)
 
     expect((await ctx.agentPresets.resolve('standard')).path).toBe(committedPath)
     expect((await ctx.agentPresets.resolveFor(creator.ctx, 'standard')).path).toBe(authored.path)
@@ -891,7 +891,7 @@ describe('route-scoped authoring candidates', () => {
   it('keeps the candidate private across failed validation and a repair', async () => {
     const authored = await candidate('candidate')
     const creator = createScope(ctx, { creator: 'repair-owner' })
-    ctx.agentPresets.registerAuthoringOverlay(creator.ctx, authored.preset)
+    ctx.agentPresets.registerScopedOverlay(creator.ctx, authored.preset)
     await writeFile(authored.path, '- id: missing\n  name: ./does-not-exist.js\n')
 
     await expect(ctx.agentPresets.validateFor(creator.ctx, 'standard'))
@@ -929,11 +929,11 @@ describe('route-scoped authoring candidates', () => {
   it('rejects duplicate overlays and unscoped registrations', async () => {
     const authored = await candidate('candidate')
     const creator = createScope(ctx, { creator: 'single-owner' })
-    ctx.agentPresets.registerAuthoringOverlay(creator.ctx, authored.preset)
+    ctx.agentPresets.registerScopedOverlay(creator.ctx, authored.preset)
 
-    expect(() => ctx.agentPresets.registerAuthoringOverlay(creator.ctx, authored.preset))
-      .toThrow(/already has an authoring candidate/)
-    expect(() => ctx.agentPresets.registerAuthoringOverlay(ctx, authored.preset))
+    expect(() => ctx.agentPresets.registerScopedOverlay(creator.ctx, authored.preset))
+      .toThrow(/already has a preset overlay/)
+    expect(() => ctx.agentPresets.registerScopedOverlay(ctx, authored.preset))
       .toThrow(/requires a scoped agent context/)
   })
 })

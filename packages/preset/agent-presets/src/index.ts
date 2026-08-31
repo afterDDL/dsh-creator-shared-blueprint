@@ -22,18 +22,32 @@
  */
 
 import { stat } from 'node:fs/promises'
+import { basename, dirname, resolve } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@deepseek-ai/dsh-agent'
 import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@deepseek-ai/dsh-settings'
-import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import { dshHomePath, expandHomePath } from '@deepseek-ai/dsh-home-paths'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, readComposition } from './authoring.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import { PresetExistsError } from './authoring.ts'
 import { PresetMountError, UnknownPresetError, type AgentPreset, type Config, type PresetRoot } from './preset.ts'
+import {
+  cleanupAgentPresetTransaction,
+  discardAgentPresetTransaction,
+  fenceAgentPresetTransaction,
+  prepareAgentPresetTransaction,
+  publishAgentPresetTransaction,
+  recoverAgentPresetTransaction,
+  resolveAgentPresetTransaction,
+  type AgentPresetTransaction,
+  type AgentPresetTransactionDisposition,
+  type AgentPresetTransactionOptions,
+  type AgentPresetTransactionRecovery,
+} from './transaction.ts'
 import type {} from './types.ts'
 
 /** Settings namespace carrying the user's chosen default preset. */
@@ -75,6 +89,14 @@ export {
 export { resolveSessionPreset, type PresetBearingSession } from './session.ts'
 export { PresetMountError, UnknownPresetError } from './preset.ts'
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
+export {
+  agentPresetTreeDigest,
+  AgentPresetTransactionNotFoundError,
+  type AgentPresetTransaction,
+  type AgentPresetTransactionDisposition,
+  type AgentPresetTransactionOptions,
+  type AgentPresetTransactionRecovery,
+} from './transaction.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -263,17 +285,17 @@ export class AgentPresets extends Service {
   }
 
   /**
-   * List the roster as seen by one Creator agent.
+   * List the roster through one agent's scoped preset projection.
    *
    * A registered candidate replaces only the committed row with the same id;
    * every other row and its order remain unchanged. A candidate for an id not
    * yet committed is appended, which keeps it addressable to its owner without
    * publishing it through {@link list}.
-   * @param agentCtx - the Creator agent whose private candidate may be visible.
-   * @returns the committed roster with that agent's candidate overlaid.
+   * @param agentCtx - scoped agent whose private overlay may be visible.
+   * @returns the committed roster with that scope's preset overlaid.
    */
   async listFor(agentCtx: Context): Promise<AgentPreset[]> {
-    const overlay = this.authoringOverlay(agentCtx)
+    const overlay = this.scopedOverlay(agentCtx)
     const presets = await this.list()
     if (overlay === undefined) return presets
     const index = presets.findIndex(preset => preset.id === overlay.id)
@@ -297,15 +319,15 @@ export class AgentPresets extends Service {
   }
 
   /**
-   * Resolve a preset through one Creator agent's private candidate overlay.
-   * @param agentCtx - the Creator agent whose candidate may satisfy the id.
-   * @param id - the preset id, or `undefined` for {@link defaultId}.
-   * @returns the candidate for its target id, otherwise the committed preset.
+   * Resolve a preset through one agent's private projection.
+   * @param agentCtx - scoped agent whose overlay may satisfy the id.
+   * @param id - preset id, or `undefined` for {@link defaultId}.
+   * @returns the overlay for its target id, otherwise the committed preset.
    * @throws when neither the overlay nor the committed roster supplies the id.
    */
   async resolveFor(agentCtx: Context, id?: string): Promise<AgentPreset> {
     const wanted = id ?? this.defaultId
-    const overlay = this.authoringOverlay(agentCtx)
+    const overlay = this.scopedOverlay(agentCtx)
     if (overlay?.id === wanted) return overlay
     return await this.resolve(wanted)
   }
@@ -354,49 +376,48 @@ export class AgentPresets extends Service {
   private readonly bindings = new WeakMap<ScopeKey, ScopeParentBinding>()
 
   /**
-   * Candidate compositions visible only to the Creator agent authoring them.
+   * Candidate compositions visible only through one scoped projection.
    *
-   * The key is the Creator's exact agent scope rather than a preset id: the
-   * committed roster may keep serving the same id while one route edits and
-   * validates a private copy. Weak ownership plus the registered agent effect
-   * prevents a terminated Creator from leaving a candidate addressable.
+   * The key is the caller's exact agent scope rather than a preset id, so the
+   * committed roster can keep serving the same id while one plugin inspects or
+   * edits a private copy. Weak ownership plus the registered scope effect
+   * prevents a disposed consumer from leaving an overlay addressable.
    */
-  private readonly authoringOverlays = new WeakMap<ScopeKey, AgentPreset>()
+  private readonly scopedOverlays = new WeakMap<ScopeKey, AgentPreset>()
 
-  /** Resolve the exact scope key required by every authoring-overlay method. */
-  private authoringScope(agentCtx: Context): ScopeKey {
+  /** Resolve the exact scope key required by every scoped-overlay method. */
+  private overlayScope(agentCtx: Context): ScopeKey {
     const key = scopeOf(agentCtx)
     if (key === undefined) {
-      throw new Error('agent-presets: an authoring overlay requires a scoped agent context')
+      throw new Error('agent-presets: a preset overlay requires a scoped agent context')
     }
     return key
   }
 
-  /** Read the candidate registered for one Creator, when it has one. */
-  private authoringOverlay(agentCtx: Context): AgentPreset | undefined {
-    return this.authoringOverlays.get(this.authoringScope(agentCtx))
+  /** Read the preset overlay registered for one scope, when it has one. */
+  private scopedOverlay(agentCtx: Context): AgentPreset | undefined {
+    return this.scopedOverlays.get(this.overlayScope(agentCtx))
   }
 
   /**
-   * Register one private candidate composition for a Creator agent.
+   * Register one private preset projection for a scoped agent.
    *
-   * The candidate normally has the target preset's id and a path under the
-   * route's private workspace. Only the explicit `*For(agentCtx)` methods read
-   * it; ordinary roster methods continue to address committed files.
-   * @param agentCtx - the Creator agent that owns the candidate.
-   * @param preset - the candidate preset identity and composition path.
+   * Only the explicit `*For(agentCtx)` methods read the overlay; ordinary
+   * roster methods continue to address committed files.
+   * @param agentCtx - scoped agent that owns the projection.
+   * @param preset - replacement preset identity and composition path.
    * @returns an idempotent disposer that removes this exact registration.
-   * @throws when the context is unscoped or already owns a candidate.
+   * @throws when the context is unscoped or already owns an overlay.
    */
-  registerAuthoringOverlay(agentCtx: Context, preset: AgentPreset): () => Promise<void> {
-    const key = this.authoringScope(agentCtx)
-    if (this.authoringOverlays.has(key)) {
-      throw new Error('agent-presets: this Creator already has an authoring candidate')
+  registerScopedOverlay(agentCtx: Context, preset: AgentPreset): () => Promise<void> {
+    const key = this.overlayScope(agentCtx)
+    if (this.scopedOverlays.has(key)) {
+      throw new Error('agent-presets: this scope already has a preset overlay')
     }
-    this.authoringOverlays.set(key, preset)
+    this.scopedOverlays.set(key, preset)
     return agentCtx.effect(() => () => {
-      if (this.authoringOverlays.get(key) === preset) this.authoringOverlays.delete(key)
-    }, `agentPresets.authoringOverlay(${JSON.stringify(preset.id)})`)
+      if (this.scopedOverlays.get(key) === preset) this.scopedOverlays.delete(key)
+    }, `agentPresets.scopedOverlay(${JSON.stringify(preset.id)})`)
   }
 
   /**
@@ -431,25 +452,25 @@ export class AgentPresets extends Service {
   }
 
   /**
-   * Compose one fresh verification agent from a candidate without publishing a
+   * Compose one fresh agent from an isolated preset without publishing a
    * standing generation.
    *
    * The candidate receives an independent composition scope that is parented
    * only to this agent and disposed with it. It therefore exercises the same
    * Loader and scope checks as a real Session while remaining unreachable to
    * sessions on the committed preset id.
-   * @param agentCtx - the fresh verification agent's scope context.
-   * @param preset - the exact candidate composition to mount.
-   * @returns the candidate that was composed.
-   * @throws when the agent is unscoped, already composed, or the candidate is unusable.
+   * @param agentCtx - fresh agent's scope context.
+   * @param preset - exact isolated composition to mount.
+   * @returns the isolated preset that was composed.
+   * @throws when the agent is unscoped, already composed, or the preset is unusable.
    */
   async mountIsolated(agentCtx: Context, preset: AgentPreset): Promise<AgentPreset> {
     const agentKey = scopeOf(agentCtx)
     if (agentKey === undefined) {
-      throw new Error('agent-presets: refusing to compose an unscoped verification context')
+      throw new Error('agent-presets: refusing to compose an unscoped isolated context')
     }
     if (this.bindings.has(agentKey)) {
-      throw new Error('agent-presets: refusing to replace an already composed verification agent')
+      throw new Error('agent-presets: refusing to replace an already composed isolated agent')
     }
     this.assertMountable(preset)
     const key: ScopeKey = { agentPresetCandidate: preset.id }
@@ -541,28 +562,28 @@ export class AgentPresets extends Service {
   }
 
   /**
-   * Read a composition through one Creator agent's private candidate overlay.
-   * @param agentCtx - the Creator agent whose candidate may satisfy the id.
+   * Read a composition through one agent's private preset projection.
+   * @param agentCtx - scoped agent whose overlay may satisfy the id.
    * @param id - the preset id.
    * @returns the selected composition exactly as stored.
    */
   async readFor(agentCtx: Context, id: string): Promise<string> {
-    const overlay = this.authoringOverlay(agentCtx)
+    const overlay = this.scopedOverlay(agentCtx)
     if (overlay?.id === id) return await readComposition(overlay)
     return await this.read(id)
   }
 
   /**
-   * Mount-validate a preset as seen by one Creator agent.
+   * Mount-validate a preset through one agent's private projection.
    *
    * The candidate target is mounted in a disposable one-shot scope so neither
    * success nor failure enters the committed standing cache. Other ids retain
    * the ordinary standing-validation behavior.
-   * @param agentCtx - the Creator agent whose candidate may satisfy the id.
+   * @param agentCtx - scoped agent whose overlay may satisfy the id.
    * @param id - the preset id to validate.
    */
   async validateFor(agentCtx: Context, id: string): Promise<void> {
-    const overlay = this.authoringOverlay(agentCtx)
+    const overlay = this.scopedOverlay(agentCtx)
     if (overlay === undefined || overlay.id !== id) {
       await this.standingKeyFor(id)
       return
@@ -609,20 +630,19 @@ export class AgentPresets extends Service {
   }
 
   /**
-   * Copy through a Creator agent, refusing writes while it owns a route
-   * candidate because that candidate is the route's only authoring target.
-   * @param agentCtx - the executing Creator agent.
+   * Copy through one scoped projection, refusing a second authoring target.
+   * @param agentCtx - executing scoped agent.
    * @param from - the committed source preset id.
    * @param id - the new preset id.
    * @param name - optional display name.
-   * @throws when the Creator owns an authoring overlay.
+   * @throws when the scope owns a preset overlay.
    */
   async copyFor(agentCtx: Context, from: string, id: string, name?: string): Promise<void> {
-    const overlay = this.authoringOverlay(agentCtx)
+    const overlay = this.scopedOverlay(agentCtx)
     if (overlay !== undefined) {
       throw new Error(
-        `agent-presets: preset_copy is unavailable while authoring candidate "${overlay.id}"; `
-        + 'edit the candidate returned by preset_resolve instead',
+        `agent-presets: preset_copy is unavailable while preset "${overlay.id}" is overlaid; `
+        + 'use the projected preset returned by preset_resolve instead',
       )
     }
     await this.copy(from, id, name)
@@ -751,31 +771,148 @@ export class AgentPresets extends Service {
   }
 
   /**
-   * Publish one formal preset directory while excluding filesystem readers.
-   *
-   * Whole-roster discovery and operations for `id` finish before `publish`
-   * starts, then wait until it settles. Operations for other preset ids remain
-   * independent. The callback owns the direct filesystem transition and must
-   * not call a formal roster method for the same id while holding this gate;
-   * {@link refreshStanding} is safe to call before it returns.
-   * @param id - preset whose formal directory is replaced.
-   * @param publish - direct, crash-recoverable filesystem publication.
-   * @returns the callback result after every rename has settled.
+   * Prepare or re-adopt one isolated transaction against a committed preset.
+   * @param id - writable committed preset id.
+   * @param options - stable request key and accepted composition revision.
+   * @returns durable transaction handle.
    */
-  async runPublication<T>(id: string, publish: () => Promise<T>): Promise<T> {
+  async prepareTransaction(
+    id: string,
+    options: AgentPresetTransactionOptions,
+  ): Promise<AgentPresetTransaction> {
     return await this.runFormalFilesystemOperation('roster', async () => {
-      return await this.withStablePresets([id], publish)
+      return await this.withStablePresets([id], async () => {
+        return await prepareAgentPresetTransaction(await this.resolveCommitted(id), options)
+      })
     })
+  }
+
+  /**
+   * Recover interrupted preparation or settlement while excluding committed readers.
+   * @param transaction - durable transaction handle.
+   * @returns reconstructed active or terminal state.
+   */
+  async recoverTransaction(transaction: AgentPresetTransaction): Promise<AgentPresetTransactionRecovery> {
+    const id = this.transactionTargetId(transaction)
+    return await this.runFormalFilesystemOperation('roster', async () => {
+      return await this.withStablePresets([id], async () => {
+        const recovery = await recoverAgentPresetTransaction(transaction)
+        if (recovery.state === 'committed') this.refreshStanding(id)
+        return recovery
+      })
+    })
+  }
+
+  /**
+   * Resolve the private candidate without exposing it through committed roster reads.
+   * @param transaction - active transaction handle.
+   * @returns preset metadata with its composition path redirected to the candidate.
+   */
+  async resolveTransaction(transaction: AgentPresetTransaction): Promise<AgentPreset> {
+    const id = this.transactionTargetId(transaction)
+    return await this.withStablePresets([id], async () => {
+      return await resolveAgentPresetTransaction(await this.resolveCommitted(id), transaction)
+    })
+  }
+
+  /**
+   * Fence one quiescent candidate for external inspection or validation.
+   * @param transaction - active transaction handle.
+   * @returns stable complete-tree digest.
+   */
+  async fenceTransaction(transaction: AgentPresetTransaction): Promise<string> {
+    const id = this.transactionTargetId(transaction)
+    return await this.withStablePresets([id], async () => {
+      return await fenceAgentPresetTransaction(await this.resolveCommitted(id), transaction)
+    })
+  }
+
+  /**
+   * Atomically publish a validated candidate against its unchanged baseline.
+   *
+   * Committed readers are excluded for the complete crash-recoverable rename
+   * sequence. A successful publication also invalidates the standing pointer,
+   * so the next agent receives the published directory generation.
+   * @param transaction - active or interrupted publishing transaction.
+   * @param candidateTreeDigest - complete tree digest retained across validation.
+   * @returns durable publication evidence.
+   */
+  async publishTransaction(
+    transaction: AgentPresetTransaction,
+    candidateTreeDigest: string,
+  ): Promise<AgentPresetTransactionDisposition> {
+    const id = this.transactionTargetId(transaction)
+    return await this.runFormalFilesystemOperation('roster', async () => {
+      return await this.withStablePresets([id], async () => {
+        const disposition = await publishAgentPresetTransaction(transaction, candidateTreeDigest)
+        this.refreshStanding(id)
+        return disposition
+      })
+    })
+  }
+
+  /**
+   * Record a safe no-publication settlement against the unchanged baseline.
+   * @param transaction - active or publish-prepared transaction.
+   * @param candidateTreeDigest - stable candidate tree being abandoned.
+   * @returns durable discard evidence.
+   */
+  async discardTransaction(
+    transaction: AgentPresetTransaction,
+    candidateTreeDigest: string,
+  ): Promise<AgentPresetTransactionDisposition> {
+    const id = this.transactionTargetId(transaction)
+    return await this.runFormalFilesystemOperation('roster', async () => {
+      return await this.withStablePresets([id], async () => {
+        return await discardAgentPresetTransaction(transaction, candidateTreeDigest)
+      })
+    })
+  }
+
+  /**
+   * Remove isolated storage after the consumer has durably recorded settlement.
+   * @param transaction - settled transaction handle.
+   */
+  async cleanupTransaction(transaction: AgentPresetTransaction): Promise<void> {
+    const id = this.transactionTargetId(transaction)
+    await this.withStablePresets([id], async () => await cleanupAgentPresetTransaction(transaction))
+  }
+
+  /**
+   * Exclude committed readers while a pre-transaction consumer recovers its old storage format.
+   *
+   * New consumers must use the typed transaction methods. This callback exists
+   * only until already-persisted external journals have crossed their recovery
+   * horizon; it must not create new transaction data.
+   * @param id - committed preset whose legacy journal may rename its directory.
+   * @param recover - idempotent recovery of an existing legacy journal.
+   * @returns recovery result after all filesystem transitions settle.
+   * @internal
+   */
+  async runLegacyPublication<T>(id: string, recover: () => Promise<T>): Promise<T> {
+    return await this.runFormalFilesystemOperation('roster', async () => {
+      return await this.withStablePresets([id], recover)
+    })
+  }
+
+  /** Require a transaction target to live directly under a configured writable root. */
+  private transactionTargetId(transaction: AgentPresetTransaction): string {
+    const target = dirname(resolve(transaction.targetPath))
+    const root = dirname(target)
+    if (!this.resolvedRoots.some(candidate => candidate.trust === 'user'
+      && resolve(expandHomePath(candidate.path)) === root)) {
+      throw new Error('agent-presets: transaction target is outside every configured writable root')
+    }
+    return basename(target)
   }
 
   /**
    * Make the next Session compose a new generation of one committed preset.
    *
-   * Directory-owned capability inputs such as Skill files can change while
-   * the composition file's stamp stays identical. Removing only the pointer
-   * makes the next mount re-read the whole preset directory; agents already
-   * joined to the previous generation keep it and are never disposed here.
-   * @param id - the committed preset id whose next mount must be fresh.
+   * Directory-owned inputs can change while the composition file's stamp stays
+   * identical. Removing only the pointer makes the next mount re-read the whole
+   * preset directory; agents already joined keep their existing generation.
+   * @param id - committed preset id whose next mount must be fresh.
    */
   refreshStanding(id: string): void {
     this.standing.delete(id)

@@ -8,7 +8,12 @@ import z from '@deepseek-ai/schemastery'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
-import type { AgentPreset, AgentPresetProjectionSnapshot } from '@deepseek-ai/dsh-agent-presets'
+import {
+  AgentPresetTransactionNotFoundError,
+  type AgentPreset,
+  type AgentPresetProjectionSnapshot,
+  type AgentPresetTransactionRecovery,
+} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-subagent'
@@ -44,9 +49,8 @@ import {
   cleanupCapabilityCandidate,
   commitCapabilityCandidate,
   discardCapabilityCandidate,
-  assertCapabilityCandidateTreeDelta,
+  assertCapabilityPresetTreeDelta,
   fenceCapabilityCandidate,
-  prepareCapabilityCandidate,
   recoverCapabilityCandidate,
   resolveCapabilityCandidatePreset,
   type CapabilityCandidateTreeDelta,
@@ -81,6 +85,7 @@ import type {
   BlueprintApplyChangeSetResult,
   BlueprintApplyReceipt,
   BlueprintBehaviorWrite,
+  BlueprintCapabilityCandidate,
   BlueprintCapabilityCandidateDisposition,
   BlueprintCapabilityCancelRequestedEvent,
   BlueprintCapabilityRepairEvent,
@@ -1713,6 +1718,118 @@ export class BlueprintAdapter extends TypertRemoteService {
     return { ...context, creatorAuthoring }
   }
 
+  /** Prepare new lifecycles through the generic AgentPresets transaction seam. */
+  private async prepareCapabilityTransaction(
+    preset: AgentPreset,
+    identity: {
+      creatorSessionId: string
+      sourceSessionId: string
+      routeId: string
+      targetPresetId: string
+      baseRevision: string
+    },
+  ): Promise<BlueprintCapabilityCandidate> {
+    const key = JSON.stringify([
+      'blueprint-capability-authoring',
+      identity.creatorSessionId,
+      identity.sourceSessionId,
+      identity.routeId,
+    ])
+    return await this.ctx.agentPresets.prepareTransaction(preset.id, {
+      key,
+      expectedRevision: identity.baseRevision,
+    })
+  }
+
+  /** Resolve a new generic transaction or an already-durable legacy candidate. */
+  private async resolveCapabilityTransaction(
+    preset: AgentPreset,
+    candidate: BlueprintCapabilityCandidate,
+  ): Promise<AgentPreset> {
+    try {
+      return await this.ctx.agentPresets.resolveTransaction(candidate)
+    } catch (error) {
+      if (!(error instanceof AgentPresetTransactionNotFoundError)) throw error
+      return await resolveCapabilityCandidatePreset(preset, candidate)
+    }
+  }
+
+  /** Fence a new generic transaction or an already-durable legacy candidate. */
+  private async fenceCapabilityTransaction(
+    preset: AgentPreset,
+    candidate: BlueprintCapabilityCandidate,
+  ): Promise<string> {
+    try {
+      return await this.ctx.agentPresets.fenceTransaction(candidate)
+    } catch (error) {
+      if (!(error instanceof AgentPresetTransactionNotFoundError)) throw error
+      return await fenceCapabilityCandidate(preset, candidate)
+    }
+  }
+
+  /** Recover a new transaction, falling back only when its generic journal is absent. */
+  private async recoverCapabilityTransaction(
+    targetPresetId: string,
+    candidate: BlueprintCapabilityCandidate,
+  ): Promise<AgentPresetTransactionRecovery> {
+    try {
+      return await this.ctx.agentPresets.recoverTransaction(candidate)
+    } catch (error) {
+      if (!(error instanceof AgentPresetTransactionNotFoundError)) throw error
+      return await this.ctx.agentPresets.runLegacyPublication(targetPresetId, async () => {
+        const recovery = await recoverCapabilityCandidate(candidate)
+        if (recovery.state === 'committed') this.ctx.agentPresets.refreshStanding(targetPresetId)
+        return recovery
+      })
+    }
+  }
+
+  /** Publish a new transaction, retaining the old journal reader only for restart compatibility. */
+  private async publishCapabilityTransaction(
+    preset: AgentPreset,
+    candidate: BlueprintCapabilityCandidate,
+    candidateTreeDigest: string,
+  ): Promise<BlueprintCapabilityCandidateDisposition> {
+    try {
+      return await this.ctx.agentPresets.publishTransaction(candidate, candidateTreeDigest)
+    } catch (error) {
+      if (!(error instanceof AgentPresetTransactionNotFoundError)) throw error
+      return await this.ctx.agentPresets.runLegacyPublication(preset.id, async () => {
+        const disposition = await commitCapabilityCandidate(preset, candidate, candidateTreeDigest)
+        this.ctx.agentPresets.refreshStanding(preset.id)
+        return disposition
+      })
+    }
+  }
+
+  /** Discard a new transaction, retaining old journal settlement for restart compatibility. */
+  private async discardCapabilityTransaction(
+    preset: AgentPreset,
+    candidate: BlueprintCapabilityCandidate,
+    candidateTreeDigest: string,
+  ): Promise<BlueprintCapabilityCandidateDisposition> {
+    try {
+      return await this.ctx.agentPresets.discardTransaction(candidate, candidateTreeDigest)
+    } catch (error) {
+      if (!(error instanceof AgentPresetTransactionNotFoundError)) throw error
+      return await this.ctx.agentPresets.runLegacyPublication(preset.id, async () => {
+        return await discardCapabilityCandidate(preset, candidate, candidateTreeDigest)
+      })
+    }
+  }
+
+  /** Clean one settled new transaction or an already-durable legacy candidate. */
+  private async cleanupCapabilityTransaction(
+    preset: AgentPreset,
+    candidate: BlueprintCapabilityCandidate,
+  ): Promise<void> {
+    await this.ctx.agentPresets.cleanupTransaction(candidate)
+    // Both cleanup methods are idempotent when their own directory is absent.
+    // Calling the legacy reader second removes old durable records without
+    // teaching AgentPresets the Blueprint-specific directory vocabulary.
+    await cleanupCapabilityCandidate(preset, candidate)
+  }
+
   private async startCapabilityAuthoringLifecycle(
     agent: Agent,
     request: NonNullable<BlueprintConversationContextRequest['capabilityAuthoring']>,
@@ -1720,7 +1837,7 @@ export class BlueprintAdapter extends TypertRemoteService {
     const sessionId = String(agent.session.id)
     this.reserveCapabilityTarget(request.targetPresetId, sessionId)
     let preset: AgentPreset | undefined
-    let candidate: Awaited<ReturnType<typeof prepareCapabilityCandidate>> | undefined
+    let candidate: BlueprintCapabilityCandidate | undefined
     let startAppended = false
     try {
       const cwd = agent.session.header.cwd
@@ -1731,7 +1848,7 @@ export class BlueprintAdapter extends TypertRemoteService {
       const baselinePresets = await this.capabilityPresetRoster()
       this.assertRosterTargetMatchesBlueprint(baselinePresets, blueprint)
       preset = await this.ctx.agentPresets.resolve(request.targetPresetId)
-      candidate = await prepareCapabilityCandidate(preset, {
+      candidate = await this.prepareCapabilityTransaction(preset, {
         creatorSessionId: sessionId,
         sourceSessionId: request.sourceSessionId,
         routeId: request.routeId,
@@ -1761,9 +1878,9 @@ export class BlueprintAdapter extends TypertRemoteService {
       if (!startAppended) {
         if (preset !== undefined && candidate !== undefined) {
           try {
-            const candidateTreeDigest = await fenceCapabilityCandidate(preset, candidate)
-            await discardCapabilityCandidate(preset, candidate, candidateTreeDigest)
-            await cleanupCapabilityCandidate(preset, candidate)
+            const candidateTreeDigest = await this.fenceCapabilityTransaction(preset, candidate)
+            await this.discardCapabilityTransaction(preset, candidate, candidateTreeDigest)
+            await this.cleanupCapabilityTransaction(preset, candidate)
           } catch (cleanupError) {
             throw new AggregateError(
               [error, cleanupError],
@@ -1872,7 +1989,7 @@ export class BlueprintAdapter extends TypertRemoteService {
       }
     }
     if (candidateDisposition === undefined) {
-      let recovery: Awaited<ReturnType<typeof recoverCapabilityCandidate>> | undefined
+      let recovery: AgentPresetTransactionRecovery | undefined
       try {
         recovery = await this.recoverCapabilityAuthoringCandidate(record.data)
       } catch (error) {
@@ -2170,7 +2287,7 @@ export class BlueprintAdapter extends TypertRemoteService {
     failure: CapabilityVerificationFailure,
   ): Promise<void> {
     const preset = await this.ctx.agentPresets.resolve(record.data.targetPresetId)
-    const candidateTreeDigest = await fenceCapabilityCandidate(preset, record.data.candidate)
+    const candidateTreeDigest = await this.fenceCapabilityTransaction(preset, record.data.candidate)
     const repairMessageId = MessageId(`blueprint-capability-repair:${createHash('sha256')
       .update(JSON.stringify([record.data.routeId, record.seq, attempt])).digest('hex')}`)
     const event = agent.session.append('blueprint/capability-repair', {
@@ -2224,12 +2341,12 @@ export class BlueprintAdapter extends TypertRemoteService {
     end: Extract<SessionEvent, { type: 'turn/end' }>,
   ): Promise<VerifiedCapabilityCandidate> {
     const formal = await this.ctx.agentPresets.resolve(record.data.targetPresetId)
-    const candidate = await resolveCapabilityCandidatePreset(formal, record.data.candidate)
+    const candidate = await this.resolveCapabilityTransaction(formal, record.data.candidate)
     let candidateTreeDigest: string
     let candidateComposition: string
     let compositionDelta: CapabilityCompositionDelta
     try {
-      candidateTreeDigest = await fenceCapabilityCandidate(formal, record.data.candidate)
+      candidateTreeDigest = await this.fenceCapabilityTransaction(formal, record.data.candidate)
       await this.assertFormalCapabilityBaseline(record.data)
       const baselineComposition = await readFile(formal.path, 'utf8')
       candidateComposition = await readFile(candidate.path, 'utf8')
@@ -2238,7 +2355,7 @@ export class BlueprintAdapter extends TypertRemoteService {
         candidateComposition,
         record.data.kind,
       )
-      const authorityTreeDigest = await fenceCapabilityCandidate(formal, record.data.candidate)
+      const authorityTreeDigest = await this.fenceCapabilityTransaction(formal, record.data.candidate)
       if (authorityTreeDigest !== candidateTreeDigest) {
         throw new Error('candidate changed during pre-mount authority validation')
       }
@@ -2394,13 +2511,14 @@ export class BlueprintAdapter extends TypertRemoteService {
           },
         }
       }
-      const afterVerification = await fenceCapabilityCandidate(formal, record.data.candidate)
+      const afterVerification = await this.fenceCapabilityTransaction(formal, record.data.candidate)
       if (afterVerification !== candidateTreeDigest) {
         throw this.capabilityVerificationError('candidate_delta', 'Candidate changed during fresh runtime verification.')
       }
       try {
-        await assertCapabilityCandidateTreeDelta(
+        await assertCapabilityPresetTreeDelta(
           formal,
+          candidate,
           record.data.candidate,
           candidateTreeDigest,
           treeDelta,
@@ -2471,15 +2589,11 @@ export class BlueprintAdapter extends TypertRemoteService {
       throw new Error('blueprint-adapter: discarded capability candidate cannot be committed')
     }
     const preset = await this.ctx.agentPresets.resolve(record.data.targetPresetId)
-    const currentTreeDigest = await fenceCapabilityCandidate(preset, record.data.candidate)
+    const currentTreeDigest = await this.fenceCapabilityTransaction(preset, record.data.candidate)
     if (currentTreeDigest !== candidateTreeDigest) {
       throw new Error('blueprint-adapter: verified capability candidate changed before commit')
     }
-    return this.ctx.agentPresets.runPublication(record.data.targetPresetId, async () => {
-      const disposition = await commitCapabilityCandidate(preset, record.data.candidate, candidateTreeDigest)
-      this.ctx.agentPresets.refreshStanding(record.data.targetPresetId)
-      return disposition
-    })
+    return await this.publishCapabilityTransaction(preset, record.data.candidate, candidateTreeDigest)
   }
 
   /** Prepare discard evidence while leaving cleanup behind the durable user terminal. */
@@ -2492,7 +2606,7 @@ export class BlueprintAdapter extends TypertRemoteService {
       throw new Error('blueprint-adapter: a committed capability candidate cannot be discarded')
     }
     const preset = await this.ctx.agentPresets.resolve(record.data.targetPresetId)
-    const candidateTreeDigest = await fenceCapabilityCandidate(preset, record.data.candidate)
+    const candidateTreeDigest = await this.fenceCapabilityTransaction(preset, record.data.candidate)
     return {
       transactionId: record.data.candidate.transactionId,
       candidateTreeDigest,
@@ -2507,9 +2621,7 @@ export class BlueprintAdapter extends TypertRemoteService {
     candidateTreeDigest: string,
   ): Promise<BlueprintCapabilityCandidateDisposition> {
     const preset = await this.ctx.agentPresets.resolve(record.data.targetPresetId)
-    return await this.ctx.agentPresets.runPublication(record.data.targetPresetId, async () => {
-      return await discardCapabilityCandidate(preset, record.data.candidate, candidateTreeDigest)
-    })
+    return await this.discardCapabilityTransaction(preset, record.data.candidate, candidateTreeDigest)
   }
 
   /** Backfill terminal surface closure for every same-source lifecycle retained in this Session. */
@@ -2636,7 +2748,7 @@ export class BlueprintAdapter extends TypertRemoteService {
       let recovery = await this.recoverCapabilityAuthoringCandidate(record.data)
       if (disposition.disposition === 'discarded' && recovery.state === 'active') {
         const preset = await this.ctx.agentPresets.resolve(record.data.targetPresetId)
-        await discardCapabilityCandidate(
+        await this.discardCapabilityTransaction(
           preset,
           record.data.candidate,
           disposition.candidateTreeDigest,
@@ -2648,7 +2760,7 @@ export class BlueprintAdapter extends TypertRemoteService {
         throw new Error('candidate settlement differs from its durable terminal evidence')
       }
       const preset = await this.ctx.agentPresets.resolve(record.data.targetPresetId)
-      await cleanupCapabilityCandidate(preset, record.data.candidate)
+      await this.cleanupCapabilityTransaction(preset, record.data.candidate)
     } catch (error) {
       this.ctx.logger.warn(`Capability candidate ${record.data.routeId} terminal cleanup failed: ${String(error)}`)
     }
@@ -2668,7 +2780,7 @@ export class BlueprintAdapter extends TypertRemoteService {
     }
     await this.recoverCapabilityAuthoringCandidate(context)
     const formal = await this.ctx.agentPresets.resolve(context.targetPresetId)
-    const candidate = await resolveCapabilityCandidatePreset(formal, context.candidate)
+    const candidate = await this.resolveCapabilityTransaction(formal, context.candidate)
     const candidateRoot = dirname(candidate.path)
     const candidateEditable = candidate.path !== formal.path
     const safeNames = new Set([
@@ -2678,7 +2790,7 @@ export class BlueprintAdapter extends TypertRemoteService {
     ])
     const inheritedNames = this.ctx.tools.schemas(agent).map(tool => tool.name)
     const deniedNames = inheritedNames.filter(name => name !== 'run_code' && !safeNames.has(name))
-    const disposeOverlay = this.ctx.agentPresets.registerAuthoringOverlay(agent.ctx, candidate)
+    const disposeOverlay = this.ctx.agentPresets.registerScopedOverlay(agent.ctx, candidate)
     let disposeRestriction: (() => void) | undefined
     let disposeGuard: (() => void) | undefined
     try {
@@ -2728,15 +2840,8 @@ export class BlueprintAdapter extends TypertRemoteService {
   /** Hide every crash-recovery rename from formal preset readers. */
   private async recoverCapabilityAuthoringCandidate(
     context: Extract<BlueprintCapabilityAuthoringEvent, { state: 'started' }>,
-  ): Promise<Awaited<ReturnType<typeof recoverCapabilityCandidate>>> {
-    return this.ctx.agentPresets.runPublication(
-      context.targetPresetId,
-      async () => {
-        const recovery = await recoverCapabilityCandidate(context.candidate)
-        if (recovery.state === 'committed') this.ctx.agentPresets.refreshStanding(context.targetPresetId)
-        return recovery
-      },
-    )
+  ): Promise<AgentPresetTransactionRecovery> {
+    return await this.recoverCapabilityTransaction(context.targetPresetId, context.candidate)
   }
 
   /** Remove one Creator's scoped candidate and authoring restrictions. */

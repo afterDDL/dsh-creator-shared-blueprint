@@ -5,8 +5,14 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { AgentPreset } from '@deepseek-ai/dsh-agent-presets'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import BlueprintAdapter from '../src/index.ts'
-import { recoverCapabilityCandidate } from '../src/capability-candidate.ts'
 import { compositionRevision } from '../src/composition.ts'
+import {
+  cleanupAgentPresetTransaction,
+  discardAgentPresetTransaction,
+  fenceAgentPresetTransaction,
+  prepareAgentPresetTransaction,
+  recoverAgentPresetTransaction,
+} from '../../agent-presets/src/transaction.ts'
 import type {
   Blueprint,
   BlueprintCapabilityAuthoringEvent,
@@ -71,7 +77,22 @@ async function startFixture(flush: () => Promise<void>, appendFails = false): Pr
   const adapter = Object.create(BlueprintAdapter.prototype) as BlueprintAdapter
   Object.assign(adapter, {
     ctx: {
-      agentPresets: { resolve: async () => preset },
+      agentPresets: {
+        resolve: async () => preset,
+        prepareTransaction: async (_id: string, options: { key: string; expectedRevision: string }) => (
+          await prepareAgentPresetTransaction(preset, options)
+        ),
+        fenceTransaction: async (transaction: Parameters<typeof fenceAgentPresetTransaction>[1]) => (
+          await fenceAgentPresetTransaction(preset, transaction)
+        ),
+        discardTransaction: async (
+          transaction: Parameters<typeof discardAgentPresetTransaction>[0],
+          digest: string,
+        ) => await discardAgentPresetTransaction(transaction, digest),
+        cleanupTransaction: async (transaction: Parameters<typeof cleanupAgentPresetTransaction>[0]) => (
+          await cleanupAgentPresetTransaction(transaction)
+        ),
+      },
       sessions: { flush },
     },
     config: {},
@@ -130,8 +151,8 @@ describe('capability lifecycle start transaction', () => {
     const start = fixture.events[0]
     expect(start).toMatchObject({ type: 'blueprint/capability-authoring', data: { state: 'started' } })
     const data = start?.data as Extract<BlueprintCapabilityAuthoringEvent, { state: 'started' }>
-    expect(await recoverCapabilityCandidate(data.candidate)).toEqual({ state: 'active' })
-    expect((await readdir(fixture.root)).some(name => name.startsWith('.blueprint-capability-'))).toBe(true)
+    expect(await recoverAgentPresetTransaction(data.candidate)).toEqual({ state: 'active' })
+    expect((await readdir(fixture.root)).some(name => name.startsWith('.agent-preset-transaction-'))).toBe(true)
     expect(await readFile(fixture.preset.path, 'utf8')).toBe(COMPOSITION)
   })
 })

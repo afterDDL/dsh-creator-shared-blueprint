@@ -19,6 +19,15 @@
 - `ctx.agentPresets.recompose(agentCtx, id): Promise<AgentPreset>` 把一个 agent 重链到另一个 preset 的常驻组装。仅在该 agent 尚无任何产出时合法——**由调用方负责该检查**；新挂载在链移动之前确保完成，失败时 agent 原封不动。与 `mount()` 一样拒绝损坏的 preset。
 - `ctx.agentPresets.standingKeyFor(id?): Promise<ScopeKey>` 没有 agent 的宿主读取方（冷读记录）解析 preset 注册所用的常驻 scope key；确保挂载而不启动任何 agent、会话或轮次。与 `mount()` 一样拒绝损坏的 preset。
 - `ctx.agentPresets.projectionSnapshot(id?): Promise<AgentPresetProjectionSnapshot>` 在一次排除该 preset 发布操作的区间内解析已提交 metadata、读取组装文本并确保与之匹配的常驻代际。宿主投影对每次 registry 读取都复用返回的 `standingKey`，因此同一结果不会混合不同发布版本的组装文本与注册。
+- `ctx.agentPresets.prepareTransaction(id, options): Promise<AgentPresetTransaction>` 在核对调用方接受的组装 revision 后，把一个可写的已提交 preset 克隆到隔离存储。`options.key` 是插件自有的稳定请求身份，用于在重试或重启后重新接管同一事务。
+- `ctx.agentPresets.resolveTransaction(transaction): Promise<AgentPreset>` 解析隔离 candidate，而不通过 `list()`、`resolve()`、`read()` 或 `projectionSnapshot()` 发布它。
+- `ctx.agentPresets.fenceTransaction(transaction): Promise<string>` 返回稳定的完整目录树 digest，供外部检查与校验。
+- `ctx.agentPresets.publishTransaction(transaction, digest): Promise<AgentPresetTransactionDisposition>` 将已提交目录树与准备时 baseline 比较，原子发布已验证 candidate，并刷新供未来 Session 使用的常驻代际。
+- `ctx.agentPresets.discardTransaction(transaction, digest): Promise<AgentPresetTransactionDisposition>` 在证明已提交 baseline 保持不变的同时，记录不发布的终态 disposition。
+- `ctx.agentPresets.recoverTransaction(transaction): Promise<AgentPresetTransactionRecovery>` 根据文件系统 journal 幂等完成被中断的准备、发布或放弃。
+- `ctx.agentPresets.cleanupTransaction(transaction): Promise<void>` 在消费插件已持久化终态 disposition 后删除隔离存储。
+- `ctx.agentPresets.registerScopedOverlay(agentCtx, preset): () => Promise<void>` 只通过该 agent scope 的 `listFor`/`resolveFor`/`readFor`/`validateFor` 调用投影一份私有 preset 路径；普通已提交读取方保持不变。
+- `ctx.agentPresets.mountIsolated(agentCtx, preset): Promise<AgentPreset>` 为一个 fresh agent 挂载确切的隔离 preset，而不把它加入常驻代际 map。
 - `ctx.agentPresets.roots: readonly PresetRoot[]` 本 roster 实际扫描的根目录——全部已配置根目录按序在前，随后是推导出的 harness home 根目录。它不是 `config.roots`：判断「是否已组装 roster」应读它，从而由同一处推导决定。
 - `ctx.agentPresets.authorable: boolean` 上述根目录中是否有任一具备 `user` 信任级别，因而 preset 是否可创建。
 - `ctx.agentPresets.read(id): Promise<string>` 某个 preset 的组装文本，与存储内容逐字一致。
@@ -26,6 +35,16 @@
 - `ctx.agentPresets.remove(id): Promise<void>` 删除一个本地创作的 preset；已加入的会话保留其常驻挂载。若用户默认值恰好指向刚删除的 preset 则一并清除：存一个尚不存在的默认值是刻意的，但本次删除的这个再也不会有人提供，留着会让所有未显式指定的新会话无法启动。
 
 `AgentPreset` 携带 `id`（目录名）、`trust`（`system` 或 `user`，取自它所在的根目录）、`path`（组装文件的绝对路径），以及——仅当该 preset 无法组装会话时——`broken`（一条人类可读的原因，名单界面原样展示）。
+
+### 隔离 preset 事务
+
+事务服务负责文件系统隔离与发布，不决定 candidate 的产品含义。消费方针对已接受的组装 revision 准备事务，编辑 `resolveTransaction()` 返回的 `AgentPreset`，按自身策略并可配合 `mountIsolated()` 校验 candidate，fence 完整目录树，最后只发布该 digest。Skill、delegation、workflow 或其他功能语义仍属于消费插件。
+
+已提交读取方从不寻址隐藏 candidate 目录。发布过程持有 roster 与目标 preset 的文件系统 gate，将完整已提交目录树与准备时 baseline 比较，停放 baseline，把 candidate 重命名到正式路径，并在恢复读取方之前使常驻指针失效。已有 agent 保留旧代际，下一个 agent 才获得发布后的代际。
+
+Journal 位于目标 preset 旁的 `.agent-preset-transaction-<sha256>`。准备、发布、放弃与清理各自可恢复。进程重启后，消费方以自己持久化的 handle 调用 `recoverTransaction()`；消费插件被移除时只会留下一个未知的隐藏目录，不会放宽已提交读取。取消是显式操作：消费方先 fence 并调用 `discardTransaction()`，持久化返回的 disposition，再调用 `cleanupTransaction()`。
+
+`runLegacyPublication()` 是仅供已持久化自有旧式 rename journal 的插件使用的内部迁移 hook。它不提供任何新事务语义，新消费方不得使用。
 
 ### 应在何处调用 `mount()`
 

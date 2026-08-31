@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -71,17 +71,20 @@ describe('committed Blueprint projection snapshots', () => {
   it('reuses one standing generation when publication lands between assembly and Skill projection', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-blueprint-projection-snapshot-'))
     const target = join(root, 'projection-target')
-    const replacement = join(root, '.projection-replacement')
-    const baseline = join(root, '.projection-baseline')
     await mkdir(target)
     await writeFile(join(target, 'agent.cordis.yml'), composition('old'))
-    await mkdir(replacement)
-    await writeFile(join(replacement, 'agent.cordis.yml'), composition('new'))
     const ctx = await harness(root)
     try {
       const before = await ctx.blueprintAdapter.read('projection-target', { cwd: root })
       expect(before.runtime.tools).toContain('web_search')
       expect(before.runtime.skills.map(skill => skill.name)).toContain('generation-old')
+      const transaction = await ctx.agentPresets.prepareTransaction('projection-target', {
+        key: 'external-projection-update',
+        expectedRevision: before.revision,
+      })
+      const candidate = await ctx.agentPresets.resolveTransaction(transaction)
+      await writeFile(candidate.path, composition('new'))
+      const candidateTreeDigest = await ctx.agentPresets.fenceTransaction(transaction)
 
       const assemble = ctx.systemPrompt.assemble.bind(ctx.systemPrompt)
       let published = false
@@ -89,11 +92,7 @@ describe('committed Blueprint projection snapshots', () => {
         const assembly = await assemble(request)
         if (!published && request.scope !== undefined) {
           published = true
-          await ctx.agentPresets.runPublication('projection-target', async () => {
-            await rename(target, baseline)
-            await rename(replacement, target)
-            ctx.agentPresets.refreshStanding('projection-target')
-          })
+          await ctx.agentPresets.publishTransaction(transaction, candidateTreeDigest)
         }
         return assembly
       })
@@ -113,6 +112,7 @@ describe('committed Blueprint projection snapshots', () => {
       expect(after.runtime.tools).not.toContain('web_search')
       expect(after.runtime.skills.map(skill => skill.name)).toContain('generation-new')
       expect(after.runtime.skills.map(skill => skill.name)).not.toContain('generation-old')
+      await ctx.agentPresets.cleanupTransaction(transaction)
     } finally {
       await ctx.fiber.dispose()
       await rm(root, { recursive: true, force: true })
