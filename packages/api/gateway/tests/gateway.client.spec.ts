@@ -172,6 +172,43 @@ async function benchFiber(
 }
 
 describe('Client Typert API', () => {
+  it('lets an external plugin mount a namespace before activating its dependent consumer', async () => {
+    const call = vi.fn<ConnectionHandle['rpc']['call']>()
+      .mockResolvedValue({ ok: true, value: { ref: 'external-1' } })
+    const ctx = await bench(call)
+    let invoke: ((
+      agentId: string,
+      request: { readonly objective: string },
+    ) => Promise<RemoteResult<{ readonly ref: string }>>) | undefined
+
+    const external = ctx.plugin(Object.assign(async (scope: Context) => {
+      const disposeRemote = await scope.remote.$mount({
+        package: '@fixture/external-client',
+        descriptors: [directDescriptor()],
+      })
+      const consumer = scope.inject(['remote.probe'], (consumerCtx) => {
+        invoke = consumerCtx.remote.probe.create
+      })
+      try {
+        await consumer
+      } catch (error) {
+        await consumer.dispose()
+        await disposeRemote()
+        throw error
+      }
+      return async () => {
+        await consumer.dispose()
+        await disposeRemote()
+      }
+    }, { inject: ['remote'] }))
+    await external
+
+    await expect(invoke?.('agent-external', { objective: 'load external UI' }))
+      .resolves.toEqual({ ok: true, value: { ref: 'external-1' } })
+    await external.dispose()
+    expect(ctx.get('remote.probe')).toBeUndefined()
+  })
+
   it('mounts concrete direct methods, validates both boundaries, and withdraws retained handles', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>()
       .mockResolvedValue({ ok: true, value: { ref: 'goal-1' } })

@@ -12,6 +12,8 @@ Interactive Blueprint 原本拆分为 Host package 与 browser package，并且�
 
 `@deepseek-ai/dsh-shared-blueprint` 是一个同时包含 Host、Client、wire contract、generated Remote artifact 与 additive `cordis.patch.yml` 的可安装 bundle。package 的 `dsh.client` 声明会加载其 browser artifact；该 artifact 先通过通用 Client Remote service 挂载 package 自己的 generated Remote contribution，再注册 Interactive Blueprint 的 additive Layout、Sidebar、Conversation 与 Tool surface。
 
+Client entry 不能在创建自身 Remote namespace 之前注入该 namespace。外层 fiber 只注入 `$mount` 所需的平台 service；挂载完成后，由一个显式注入的 child fiber 持有该新 namespace 的全部 UI consumer。启动过程会等待该 child 完成，拆卸过程则先 dispose child，再撤销 Remote contribution。一项非 Blueprint 的 external-client regression 验证同一套“先挂载、后消费”顺序。
+
 标准 `dsh-web-app` package 不再依赖 Shared Blueprint，也不包含 Blueprint Host 或 Client row。CLI 没有该 bundle 的 runtime dependency。验证 Interactive Blueprint 的测试会显式组合同一份 standalone patch，因此其 assembly 表示安装了 add-on 的 Web，而不是隐藏的产品默认值。
 
 package build 在自身 package root 内自包含。它不导入仓库共用 Client tsdown helper，不使用仓库相对 runtime import，也不在 manifest 中保留 `workspace:` range。Host 与 Client TypeScript project 仍然分离；发布的 tarball 包含预构建 JavaScript、declaration、Typert Host descriptor、Client Remote codec、CSS、license 与 composition patch。Inspect Mode 不属于本 bundle。

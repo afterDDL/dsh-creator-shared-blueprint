@@ -142,11 +142,14 @@ function dshAgentCatalog(api: ConnectionHandle['api']): BlueprintAgentCatalog {
   }
 }
 
-/** Services required by the four Builder entries and the trial coordinator. */
+/** Services required before this package can mount its Remote contribution. */
 export const inject = [
   'slots', 'remote', 'connection', 'sessions', 'workspaces', 'layout', 'conversation',
   'conversationEvents', 'locale',
 ]
+
+/** Services required by the four Builder entries and the trial coordinator. */
+const BLUEPRINT_UI_INJECT = [...inject, 'remote.blueprint']
 
 /** Build-owned state injected before booting the real Web shell in Blueprint Demo mode. */
 export interface BlueprintDemoBootstrap {
@@ -1582,16 +1585,26 @@ function mountBlueprintUi(ctx: ClientContext): void {
 
 /**
  * Mount this package's generated Remote namespace before registering its UI contributions.
+ * The dependent UI runs in a child fiber that explicitly injects the namespace:
+ * the namespace is created by `$mount()`, so declaring it on this outer plugin
+ * would leave the outer plugin pending before it could perform that mount.
  * @param ctx - browser Cordis root carrying the public Client services.
- * @returns disposer for the package-owned Remote namespace.
+ * @returns disposer for the package-owned UI and Remote namespace.
  */
 export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(blueprintRemote)
+  const ui = ctx.inject(BLUEPRINT_UI_INJECT, (uiCtx: ClientContext) => {
+    mountBlueprintUi(uiCtx)
+  })
   try {
-    mountBlueprintUi(ctx)
+    await ui
   } catch (error) {
+    await ui.dispose()
     await disposeRemote()
     throw error
   }
-  return disposeRemote
+  return async () => {
+    await ui.dispose()
+    await disposeRemote()
+  }
 }
