@@ -19,7 +19,7 @@ import { snapshotJsonValue } from './json.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
-import { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
+import { KNOWN_SESSION_EVENT_TYPE_OWNERS, KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 
 export * from './types.ts'
 export { SessionPreparation } from './preparation.ts'
@@ -788,15 +788,18 @@ export class SessionEventTypeRegistry {
    * Register one required durable event type for this plugin lifetime.
    * @param registration - merged event type and stable diagnostic owner.
    * @returns an idempotent disposer removing this exact registration.
-   * @throws when either field is blank, the build already owns the type, or
-   *   another live plugin registration owns it.
+   * @throws when either field is blank, the build owns the type under another
+   *   package identity, or another live registration owns it.
    */
   register(registration: SessionEventTypeRegistration): () => void {
     const { type, owner } = registration
     if (type.trim() === '') throw new TypeError('session event type must not be blank')
     if (owner.trim() === '') throw new TypeError('session event type owner must not be blank')
-    if (KNOWN_SESSION_EVENT_TYPES.has(type)) {
-      throw new Error(`session event type ${JSON.stringify(type)} is owned by this harness build`)
+    const buildOwner = KNOWN_SESSION_EVENT_TYPE_OWNERS.get(type)
+    if (buildOwner !== undefined && buildOwner !== owner) {
+      throw new Error(
+        `session event type ${JSON.stringify(type)} is owned by this harness build as ${JSON.stringify(buildOwner)}`,
+      )
     }
     const existing = this.registrations.get(type)
     if (existing !== undefined) {

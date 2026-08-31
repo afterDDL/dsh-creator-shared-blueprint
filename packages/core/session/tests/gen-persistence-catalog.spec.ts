@@ -13,12 +13,20 @@ import {
   collectLogEvents,
   collectSurfaceEventTypes,
   render,
+  renderKnownEventTypes,
 } from '../../../../scripts/gen-persistence-catalog.ts'
 
 /** Create a fixture scan root; `files` maps `packages/…`-relative paths to source. */
 function fixtureRoot(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), 'persistence-catalog-'))
-  for (const [rel, source] of Object.entries(files)) {
+  const completeFiles = { ...files }
+  for (const rel of Object.keys(files)) {
+    const match = /^(packages\/[^/]+\/[^/]+)\/src\//u.exec(rel)
+    if (match === null) continue
+    const manifest = `${match[1]}/package.json`
+    completeFiles[manifest] ??= `{ "name": "@fixture/${match[1].replace(/^packages\//u, '').replace(/\//gu, '-')}" }\n`
+  }
+  for (const [rel, source] of Object.entries(completeFiles)) {
     const abs = join(root, rel)
     mkdirSync(join(abs, '..'), { recursive: true })
     writeFileSync(abs, source)
@@ -54,6 +62,7 @@ describe('gen-persistence-catalog collectLogEvents', () => {
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
       name: 'fix/happened',
+      owner: '@deepseek-ai/dsh-session',
       scope: 'fix',
       doc: 'A thing was recorded.',
       payload: '{ turn: number }',
@@ -247,6 +256,7 @@ describe('gen-persistence-catalog collectSurfaceEventTypes', () => {
 describe('gen-persistence-catalog annotateSurface + render', () => {
   const entry = (name: string) => ({
     name,
+    owner: '@fixture/core-fix',
     scope: name.split('/')[0] ?? name,
     payload: '{ turn: number }',
     doc: `Records ${name}.`,
@@ -283,5 +293,11 @@ describe('gen-persistence-catalog annotateSurface + render', () => {
     expect(out).toContain('#### `fix/message` — surface')
     expect(out).toContain('#### `fix/marker` — log-only')
     expect(out).toContain('```ts persistence-catalog\n/** Records fix/marker. */\n\'fix/marker\': { turn: number }\n```')
+  })
+
+  it('renders the build vocabulary with its declaring package owners', () => {
+    const out = renderKnownEventTypes(annotateSurface([entry('fix/message')], ['fix/message']))
+    expect(out).toContain('["fix/message", "@fixture/core-fix"]')
+    expect(out).toContain('...KNOWN_SESSION_EVENT_TYPE_OWNERS.keys()')
   })
 })

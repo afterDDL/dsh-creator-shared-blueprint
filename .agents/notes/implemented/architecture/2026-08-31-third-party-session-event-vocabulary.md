@@ -10,7 +10,7 @@ English | [中文](2026-08-31-third-party-session-event-vocabulary.zh.md)
 
 ## Decision
 
-`SessionStore` owns `eventTypes`, a runtime registry for required durable event types supplied outside the first-party build. A plugin declaration-merges its event payload and registers `{ type, owner }` during application. The registration follows the plugin fiber through its disposer; persistence accepts a required event only when its type belongs to the generated first-party set or a currently live registration.
+`SessionStore` owns `eventTypes`, a runtime registry for required durable event types supplied outside the first-party build. A plugin declaration-merges its event payload and registers `{ type, owner }` during application. The generated first-party vocabulary records each declaring npm package: that package may register the same owner so one startup path works both in-build and out of tree, while another owner rejects. The registration follows the plugin fiber through its disposer; persistence accepts a required event only when its type belongs to the generated first-party set or a currently live registration.
 
 Persistence remains fail-closed. A plugin must register before any Session carrying its event is inspected, loaded, or resumed. The decode check itself enforces that ordering: missing or late registration returns `SessionFormatUnsupportedError` before Session construction. Restart requires registration again, plugin removal makes later reads refuse, and concurrent ownership collisions reject instead of choosing one interpretation.
 

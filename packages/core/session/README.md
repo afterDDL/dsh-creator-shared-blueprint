@@ -17,7 +17,7 @@ Creates and holds event-sourced `Session` instances. Persistence is intentionall
 - `ctx.sessions.fork(source, boundary?, childSessionId?): Session` — Resolve a live session object or id, select a seed through the inclusive `boundary` event seq (default: current last event), require that prefix to end outside an open turn, and create a live child session with lineage metadata.
 - `ctx.sessions.get(id: SessionId): Session | undefined`
 - `ctx.sessions.list(): Session[]`
-- `ctx.sessions.eventTypes.register({ type, owner }): () => void` registers one declaration-merged required durable event type for the calling plugin lifetime. Persistence accepts that type only while the registration is live; first-party and duplicate registrations reject.
+- `ctx.sessions.eventTypes.register({ type, owner }): () => void` registers one declaration-merged required durable event type for the calling plugin lifetime. An in-build package may register its generated npm owner so the same code also works out of tree; another owner or a duplicate live registration rejects.
 
 #### Advanced: ordered-teardown lifecycle primitives
 

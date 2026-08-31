@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决定
 
-`SessionStore` 持有运行时注册表 `eventTypes`，用于登记第一方 build 之外的必需持久事件类型。插件通过声明合并定义事件 payload，并在应用期间注册 `{ type, owner }`。注册经 disposer 跟随插件 fiber；只有事件类型属于生成的第一方集合或当前有效的注册时，持久化才接受该必需事件。
+`SessionStore` 持有运行时注册表 `eventTypes`，用于登记第一方 build 之外的必需持久事件类型。插件通过声明合并定义事件 payload，并在应用期间注册 `{ type, owner }`。生成的第一方词汇会记录每个声明方的 npm package；该 package 可以注册相同 owner，使一条启动路径同时适用于 build 内和仓库外，而其他 owner 会被拒绝。注册经 disposer 跟随插件 fiber；只有事件类型属于生成的第一方集合或当前有效的注册时，持久化才接受该必需事件。
 
 持久化继续保持快速失败。插件必须在任何含该事件的 Session 被 inspect、load 或 resume 前完成注册。解码检查会直接执行这项顺序约束：注册缺失或过晚时，在构造 Session 前返回 `SessionFormatUnsupportedError`。重启后必须重新注册，移除插件会使后续读取拒绝，并发 ownership 冲突会拒绝，而不是任选一种解释。
 

@@ -17,7 +17,7 @@
 - `ctx.sessions.fork(source, boundary?, childSessionId?): Session`：解析实时会话对象或 id，选取截至 `boundary` 事件序号（含该事件）的种子（默认为当前最后一个事件），要求所选前缀结束时没有开放轮次，再创建带谱系元数据的实时子会话。
 - `ctx.sessions.get(id: SessionId): Session | undefined`
 - `ctx.sessions.list(): Session[]`
-- `ctx.sessions.eventTypes.register({ type, owner }): () => void` 在调用插件的生命周期内注册一个通过声明合并加入的必需持久事件类型。只有注册仍然有效时，持久化才接受该类型；第一方类型和重复注册都会被拒绝。
+- `ctx.sessions.eventTypes.register({ type, owner }): () => void` 在调用插件的生命周期内注册一个通过声明合并加入的必需持久事件类型。build 内的 package 可以用生成的 npm owner 注册，使同一份代码也能在仓库外工作；其他 owner 或重复的 live registration 会被拒绝。
 
 #### 高级：有序清理生命周期原语
 

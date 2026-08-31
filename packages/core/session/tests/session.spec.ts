@@ -1119,8 +1119,17 @@ describe('SessionStore', () => {
     expect(() => ctx.sessions.eventTypes.register({ type: customType, owner: 'second-dummy' }))
       .toThrow(/already registered by "first-dummy"/)
     expect(() => ctx.sessions.eventTypes.register({ type: 'turn/start', owner: 'external-dummy' }))
-      .toThrow(/owned by this harness build/)
+      .toThrow(/owned by this harness build as "@deepseek-ai\/dsh-session"/)
+    const disposeBuildOwner = ctx.sessions.eventTypes.register({
+      type: 'turn/start',
+      owner: '@deepseek-ai/dsh-session',
+    })
+    expect(() => ctx.sessions.eventTypes.register({
+      type: 'turn/start',
+      owner: '@deepseek-ai/dsh-session',
+    })).toThrow(/already registered by "@deepseek-ai\/dsh-session"/)
 
+    disposeBuildOwner()
     dispose()
     expect(ctx.sessions.eventTypes.supports(customType)).toBe(false)
   })
