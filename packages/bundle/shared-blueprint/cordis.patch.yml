@@ -1,0 +1,3 @@
+- insert:
+    - id: shared-blueprint
+      name: '@deepseek-ai/dsh-shared-blueprint'

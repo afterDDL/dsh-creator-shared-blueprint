@@ -293,13 +293,6 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm.',
   },
   {
-    key: 'blueprintAdapter',
-    pkg: 'blueprint-adapter',
-    title: 'Preset Blueprint projection and narrow write-back',
-    mode: 'core',
-    note: 'Projects preset composition, runtime assembly, and access state; writes only Purpose, numbered Behavior, and Web Fetch for user-authored presets.',
-  },
-  {
     key: 'commands',
     pkg: 'commands',
     title: 'Human command registry',

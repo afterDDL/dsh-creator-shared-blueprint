@@ -1,56 +1,11 @@
 {
-  "extends": "../../../tsconfig.base.json",
-  "compilerOptions": {
-    "rootDir": "src",
-    "outDir": "lib/types",
-    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
-  },
-  "include": ["src"],
+  "files": [],
   "references": [
     {
-      "path": "../../../vendor/cosmokit"
+      "path": "./tsconfig.host.json"
     },
     {
-      "path": "../../../vendor/cordis"
-    },
-    {
-      "path": "../../../vendor/include"
-    },
-    {
-      "path": "../../core/agent"
-    },
-    {
-      "path": "../../core/session"
-    },
-    {
-      "path": "../../skill/skill"
-    },
-    {
-      "path": "../../subagent/subagent"
-    },
-    {
-      "path": "../../llm/llm"
-    },
-    {
-      "path": "../../core/system-prompt"
-    },
-    {
-      "path": "../../core/tools"
-    },
-    {
-      "path": "../../typert/protocol"
-    },
-    {
-      "path": "../../interaction/permission-presets"
-    },
-    {
-      "path": "../../preset/agent-presets"
-    },
-    {
-      "path": "../../util/atomic-write"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "./tsconfig.client.json"
     }
   ]
 }

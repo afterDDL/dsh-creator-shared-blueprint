@@ -24,8 +24,6 @@ import type {
   BlueprintChangeSet,
 } from '../contract/types.ts'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-shared-blueprint'
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -92,11 +90,6 @@ function validateImpactCandidates(change: Record<string, unknown>, fail: Invaria
     }
   }
 }
-
-/** Cordis companion plugin name. */
-export const name = 'blueprint-adapter-invariant'
-/** Service required before the companion can reserve package ownership. */
-export const inject = ['invariants']
 
 /** Validate the semantic fields of one direct-edit event imported from or appended to a Session log. */
 function validateUserChange(event: SessionEvent, fail: InvariantFailure): void {
@@ -845,8 +838,13 @@ function validateRoutingDecision(session: Session, event: SessionEvent, fail: In
   }
 }
 
-/** Install direct-edit payload validation for loaded and newly appended Session events. */
-const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
+/**
+ * Install Shared Blueprint durable lifecycle invariants.
+ * @param ctx - Cordis context carrying Session state and dispatch events.
+ * @param fail - bound invariant failure reporter.
+ * @returns nothing; the owning companion controls the registered listeners.
+ */
+export const installBlueprintInvariants: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
   const seed = (session: Session): void => {
     for (const event of session.events) {
       validateUserChange(event, fail)
@@ -915,11 +913,4 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
   }, { global: true })
 }, { inject: ['sessions'] })
 
-/**
- * Register this package's invariant companion.
- * @param ctx - Cordis context carrying the invariant service.
- * @returns the installed registration's disposer after setup succeeds.
- */
-export const apply = (ctx: Context): Promise<() => void> =>
-  Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
 /* jscpd:ignore-end */

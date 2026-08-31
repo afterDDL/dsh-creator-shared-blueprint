@@ -2,7 +2,20 @@
 
 English | [中文](README.zh.md)
 
-The Host service for Interactive Blueprint. `ctx.blueprintAdapter.read(presetId, { agent? })` projects a real agent preset together with the scoped `systemPrompt.assemble()` result and the permission preset for a future or live session. Without a live agent, it captures committed metadata, composition text, and one standing scope key in a single AgentPresets projection snapshot, then reuses that key for assembly and Skill reads. It emits Purpose, Identity, Capabilities, Behavior, Output, and Access nodes without creating values for absent sections.
+The installable Interactive Blueprint bundle for DSH. One package owns the Host adapter, durable event vocabulary, generated Remote, browser client, and additive composition patch. The standard Web bundle does not mount Blueprint; installation is explicit. Inspect Mode is not included.
+
+## Installation
+
+Install a prebuilt tarball into the Web profile, then start the ordinary Web app:
+
+```sh
+dsh plugin --profile web add ./deepseek-ai-dsh-shared-blueprint-0.1.0-rc.7.tgz
+dsh web
+```
+
+The bundle adds one `shared-blueprint` Host row. Its `dsh.client` declaration loads the matching browser plugin, which mounts the package's generated Remote contribution before registering its additive Layout, Sidebar, and Conversation surfaces. Removing the bundle removes both faces; no Blueprint row remains in `dsh-web-app`.
+
+`ctx.blueprintAdapter.read(presetId, { agent? })` projects a real agent preset together with the scoped `systemPrompt.assemble()` result and the permission preset for a future or live session. Without a live agent, it captures committed metadata, composition text, and one standing scope key in a single AgentPresets projection snapshot, then reuses that key for assembly and Skill reads. It emits Purpose, Identity, Capabilities, Behavior, Output, and Access nodes without creating values for absent sections.
 
 During service startup the adapter registers its required durable Session event types under the package's npm identity. The same registration path applies when the package is bundled into a DSH build or installed out of tree; a conflicting owner or duplicate live adapter fails during composition before any Blueprint Session is decoded.
 

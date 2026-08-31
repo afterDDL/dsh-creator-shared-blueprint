@@ -12,7 +12,7 @@ it('keeps a new Session free of the prior Creator lock in the runnable Web examp
     id: string
     config?: { demoBootstrapJson?: string }
   }[]
-  const bootstrap = JSON.parse(rows.find(row => row.id === 'ui-blueprint')!.config!.demoBootstrapJson!) as {
+  const bootstrap = JSON.parse(rows.find(row => row.id === 'shared-blueprint')!.config!.demoBootstrapJson!) as {
     seeds: object[]
     preferredPresetId?: string
     creatorScenario: { blueprint: object }

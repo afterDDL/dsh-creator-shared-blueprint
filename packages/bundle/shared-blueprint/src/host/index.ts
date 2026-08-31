@@ -18,10 +18,12 @@ import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session/types'
 import { CallId, createUserMessage, freezeMessage, MessageId } from '@deepseek-ai/dsh-llm'
 import { defineTool, RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { Config } from '../index.ts'
 import { canonicalJson } from './canonical-json.ts'
 import {
   blueprintSourceLanguage,
@@ -45,6 +47,7 @@ import { prepareCreatorHandoff, startExclusiveCreator, stopAcceptedCreatorRoute 
 import { resolveDurableCapabilityAuthoring } from './capability-authority.ts'
 import { creatorTerminalEvidence } from './creator-lifecycle.ts'
 import { registerBlueprintSessionEventTypes } from './session-events.ts'
+import { installBlueprintDemoBootstrap } from './demo-bootstrap.ts'
 import {
   cleanupCapabilityCandidate,
   commitCapabilityCandidate,
@@ -474,17 +477,12 @@ export interface BlueprintReadOptions {
 
 const DEFAULT_CAPABILITY_REPAIR_ATTEMPTS = 2
 
-/** Runtime policy for background capability repair. */
-export interface Config {
-  /** Additional Creator turns allowed after internal candidate verification misses. */
-  capabilityRepairAttempts?: number
-}
-
 /** Project and narrowly edit real agent presets for Interactive Blueprint. */
 export class BlueprintAdapter extends TypertRemoteService {
   static inject = ['agentPresets', 'systemPrompt', 'agents', 'sessions', 'tools', 'skills', 'subagents']
   static Config: z<Config> = z.object({
     capabilityRepairAttempts: z.number().step(1).min(0).default(DEFAULT_CAPABILITY_REPAIR_ATTEMPTS),
+    demoBootstrapJson: z.string(),
   })
 
   private readonly conversationBindings = new Map<string, ConversationBinding>()
@@ -497,6 +495,7 @@ export class BlueprintAdapter extends TypertRemoteService {
 
   constructor(ctx: Context, public config: Config = {}) {
     super(ctx, 'blueprintAdapter', { namespace: 'blueprint' })
+    if (config.demoBootstrapJson !== undefined) installBlueprintDemoBootstrap(ctx, config.demoBootstrapJson)
     ctx.effect(
       () => registerBlueprintSessionEventTypes(ctx),
       'blueprint-adapter: durable Session event vocabulary',

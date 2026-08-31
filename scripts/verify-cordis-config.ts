@@ -397,7 +397,10 @@ function rootProjectReferences(): Set<string> {
     for (const reference of references) {
       if (typeof reference.path !== 'string') continue
       const target = resolve(dirname(file), reference.path)
-      if (target.endsWith('.json')) queue.push(target)
+      if (target.endsWith('.json')) {
+        collected.add(dirname(target))
+        queue.push(target)
+      }
       else collected.add(target)
     }
   }

@@ -25,7 +25,7 @@ it('renders the real RC rule source collapsed and expanded in the runnable Bluep
     id: string
     config?: { demoBootstrapJson?: string }
   }[]
-  const bootstrap = JSON.parse(rows.find(row => row.id === 'ui-blueprint')!.config!.demoBootstrapJson!) as {
+  const bootstrap = JSON.parse(rows.find(row => row.id === 'shared-blueprint')!.config!.demoBootstrapJson!) as {
     creatorScenario: { blueprint: { nodes: { type: string }[] } }
   }
   const blueprint = bootstrap.creatorScenario.blueprint

@@ -430,20 +430,6 @@ export interface Config {
 
 来源：[`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
 
-<a id="deepseek-aidsh-client-ui-blueprint"></a>
-
-## `@deepseek-ai/dsh-client-ui-blueprint`
-
-```ts config-catalog
-/** Host configuration for an explicitly enabled Blueprint fixture preview. */
-export interface Config {
-  /** JSON document assigned to `window.__DSH_BLUEPRINT_DEMO__` before the Web shell starts. */
-  demoBootstrapJson?: string
-}
-```
-
-来源：[`packages/client/ui-blueprint/src/index.ts:8`](../packages/client/ui-blueprint/src/index.ts)
-
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-code-runtime-worker-thread`

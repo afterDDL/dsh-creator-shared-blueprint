@@ -2,7 +2,20 @@
 
 [English](README.md) | 中文
 
-Interactive Blueprint 的 Host 服务。`ctx.blueprintAdapter.read(presetId, { agent? })` 会把真实 agent preset、带 scope 的 `systemPrompt.assemble()` 结果，以及未来会话或现有会话的权限 preset 投影到一起。没有 live agent 时，它通过一次 AgentPresets projection snapshot 同时取得已提交 metadata、组装文本与一个常驻 scope key，并为 assembly 与 Skill 读取复用该 key。它支持 Purpose、Identity、Capabilities、Behavior、Output 与 Access；原始状态中不存在的段落不会被补造出来。
+DSH 的可安装 Interactive Blueprint bundle。一个 package 同时拥有 Host adapter、durable event vocabulary、generated Remote、browser client 与 additive composition patch。标准 Web bundle 不挂载 Blueprint，必须显式安装。本 package 不包含 Inspect Mode。
+
+## 安装
+
+把预构建 tarball 安装到 Web profile，然后启动普通 Web app：
+
+```sh
+dsh plugin --profile web add ./deepseek-ai-dsh-shared-blueprint-0.1.0-rc.7.tgz
+dsh web
+```
+
+该 bundle 会添加一个 `shared-blueprint` Host row。其 `dsh.client` 声明加载同一 package 的 browser plugin；browser plugin 先挂载 package 自带的 generated Remote contribution，再注册 additive Layout、Sidebar 与 Conversation surface。移除 bundle 会同时移除 Host 与 Client 两个 face；`dsh-web-app` 内不保留 Blueprint row。
+
+`ctx.blueprintAdapter.read(presetId, { agent? })` 会把真实 agent preset、带 scope 的 `systemPrompt.assemble()` 结果，以及未来会话或现有会话的权限 preset 投影到一起。没有 live agent 时，它通过一次 AgentPresets projection snapshot 同时取得已提交 metadata、组装文本与一个常驻 scope key，并为 assembly 与 Skill 读取复用该 key。它支持 Purpose、Identity、Capabilities、Behavior、Output 与 Access；原始状态中不存在的段落不会被补造出来。
 
 服务启动期间，adapter 会以该 package 的 npm 身份注册自己所需的持久 Session event type。同一条注册路径既适用于被打入 DSH build 的 package，也适用于仓库外安装；冲突 owner 或重复的 live adapter 会在任何 Blueprint Session 被解码前使 composition 失败。
 

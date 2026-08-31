@@ -403,6 +403,18 @@ Discovery is unmemoized: `list()` and `resolve()` re-read the roots on every cal
 async list(): Promise<AgentPreset[]>
 
 /**
+ * List the roster through one agent's scoped preset projection.
+ *
+ * A registered candidate replaces only the committed row with the same id;
+ * every other row and its order remain unchanged. A candidate for an id not
+ * yet committed is appended, which keeps it addressable to its owner without
+ * publishing it through {@link list}.
+ * @param agentCtx - scoped agent whose private overlay may be visible.
+ * @returns the committed roster with that scope's preset overlaid.
+ */
+async listFor(agentCtx: Context): Promise<AgentPreset[]>
+
+/**
  * Resolve one preset by id.
  *
  * A broken preset resolves — deleting one, reading one, and reporting one
@@ -413,6 +425,27 @@ async list(): Promise<AgentPreset[]>
  * @throws when no configured root supplies that id.
  */
 async resolve(id?: string): Promise<AgentPreset>
+
+/**
+ * Resolve a preset through one agent's private projection.
+ * @param agentCtx - scoped agent whose overlay may satisfy the id.
+ * @param id - preset id, or `undefined` for {@link defaultId}.
+ * @returns the overlay for its target id, otherwise the committed preset.
+ * @throws when neither the overlay nor the committed roster supplies the id.
+ */
+async resolveFor(agentCtx: Context, id?: string): Promise<AgentPreset>
+
+/**
+ * Register one private preset projection for a scoped agent.
+ *
+ * Only the explicit `*For(agentCtx)` methods read the overlay; ordinary
+ * roster methods continue to address committed files.
+ * @param agentCtx - scoped agent that owns the projection.
+ * @param preset - replacement preset identity and composition path.
+ * @returns an idempotent disposer that removes this exact registration.
+ * @throws when the context is unscoped or already owns an overlay.
+ */
+registerScopedOverlay(agentCtx: Context, preset: AgentPreset): () => Promise<void>
 
 /**
  * Compose one agent from a preset: ensure the preset's standing mount, then
@@ -428,6 +461,21 @@ async resolve(id?: string): Promise<AgentPreset>
  * @throws when the preset is unknown or its composition is unusable.
  */
 async mount(agentCtx: Context, id?: string): Promise<AgentPreset>
+
+/**
+ * Compose one fresh agent from an isolated preset without publishing a
+ * standing generation.
+ *
+ * The candidate receives an independent composition scope that is parented
+ * only to this agent and disposed with it. It therefore exercises the same
+ * Loader and scope checks as a real Session while remaining unreachable to
+ * sessions on the committed preset id.
+ * @param agentCtx - fresh agent's scope context.
+ * @param preset - exact isolated composition to mount.
+ * @returns the isolated preset that was composed.
+ * @throws when the agent is unscoped, already composed, or the preset is unusable.
+ */
+async mountIsolated(agentCtx: Context, preset: AgentPreset): Promise<AgentPreset>
 
 /**
  * Join one agent to the SAME standing composition another already runs on.
@@ -477,6 +525,25 @@ composedPreset(agentCtx: Context): string | undefined
 async read(id: string): Promise<string>
 
 /**
+ * Read a composition through one agent's private preset projection.
+ * @param agentCtx - scoped agent whose overlay may satisfy the id.
+ * @param id - the preset id.
+ * @returns the selected composition exactly as stored.
+ */
+async readFor(agentCtx: Context, id: string): Promise<string>
+
+/**
+ * Mount-validate a preset through one agent's private projection.
+ *
+ * The candidate target is mounted in a disposable one-shot scope so neither
+ * success nor failure enters the committed standing cache. Other ids retain
+ * the ordinary standing-validation behavior.
+ * @param agentCtx - scoped agent whose overlay may satisfy the id.
+ * @param id - the preset id to validate.
+ */
+async validateFor(agentCtx: Context, id: string): Promise<void>
+
+/**
  * Create a locally authored preset by copying an existing one whole.
  *
  * Copy is the only authoring write. Composition text never crosses this
@@ -492,6 +559,16 @@ async read(id: string): Promise<string>
  * or the deployment configures no writable root.
  */
 async copy(from: string, id: string, name?: string): Promise<void>
+
+/**
+ * Copy through one scoped projection, refusing a second authoring target.
+ * @param agentCtx - executing scoped agent.
+ * @param from - the committed source preset id.
+ * @param id - the new preset id.
+ * @param name - optional display name.
+ * @throws when the scope owns a preset overlay.
+ */
+async copyFor(agentCtx: Context, from: string, id: string, name?: string): Promise<void>
 
 /**
  * Delete a locally authored preset.
@@ -552,11 +629,101 @@ async recompose(agentCtx: Context, id: string): Promise<AgentPreset>
  * @throws when the preset is unknown or its composition is unusable.
  */
 async standingKeyFor(id?: string): Promise<ScopeKey>
+
+/**
+ * Capture one committed composition and its standing runtime generation.
+ *
+ * Resolution, content read, and mount share one preset filesystem operation, so
+ * a Host projection cannot combine composition text from one publication
+ * with registrations from another.
+ * @param id - the preset id, or `undefined` for {@link defaultId}.
+ * @returns preset metadata, composition text, and the matching standing key.
+ * @throws when the preset is unknown or its composition is unusable.
+ */
+async projectionSnapshot(id?: string): Promise<AgentPresetProjectionSnapshot>
+
+/**
+ * Prepare or re-adopt one isolated transaction against a committed preset.
+ * @param id - writable committed preset id.
+ * @param options - stable request key and accepted composition revision.
+ * @returns durable transaction handle.
+ */
+async prepareTransaction( id: string, options: AgentPresetTransactionOptions, ): Promise<AgentPresetTransaction>
+
+/**
+ * Recover interrupted preparation or settlement while excluding committed readers.
+ * @param transaction - durable transaction handle.
+ * @returns reconstructed active or terminal state.
+ */
+async recoverTransaction(transaction: AgentPresetTransaction): Promise<AgentPresetTransactionRecovery>
+
+/**
+ * Resolve the private candidate without exposing it through committed roster reads.
+ * @param transaction - active transaction handle.
+ * @returns preset metadata with its composition path redirected to the candidate.
+ */
+async resolveTransaction(transaction: AgentPresetTransaction): Promise<AgentPreset>
+
+/**
+ * Fence one quiescent candidate for external inspection or validation.
+ * @param transaction - active transaction handle.
+ * @returns stable complete-tree digest.
+ */
+async fenceTransaction(transaction: AgentPresetTransaction): Promise<string>
+
+/**
+ * Atomically publish a validated candidate against its unchanged baseline.
+ *
+ * Committed readers are excluded for the complete crash-recoverable rename
+ * sequence. A successful publication also invalidates the standing pointer,
+ * so the next agent receives the published directory generation.
+ * @param transaction - active or interrupted publishing transaction.
+ * @param candidateTreeDigest - complete tree digest retained across validation.
+ * @returns durable publication evidence.
+ */
+async publishTransaction( transaction: AgentPresetTransaction, candidateTreeDigest: string, ): Promise<AgentPresetTransactionDisposition>
+
+/**
+ * Record a safe no-publication settlement against the unchanged baseline.
+ * @param transaction - active or publish-prepared transaction.
+ * @param candidateTreeDigest - stable candidate tree being abandoned.
+ * @returns durable discard evidence.
+ */
+async discardTransaction( transaction: AgentPresetTransaction, candidateTreeDigest: string, ): Promise<AgentPresetTransactionDisposition>
+
+/**
+ * Remove isolated storage after the consumer has durably recorded settlement.
+ * @param transaction - settled transaction handle.
+ */
+async cleanupTransaction(transaction: AgentPresetTransaction): Promise<void>
+
+/**
+ * Exclude committed readers while a pre-transaction consumer recovers its old storage format.
+ *
+ * New consumers must use the typed transaction methods. This callback exists
+ * only until already-persisted external journals have crossed their recovery
+ * horizon; it must not create new transaction data.
+ * @param id - committed preset whose legacy journal may rename its directory.
+ * @param recover - idempotent recovery of an existing legacy journal.
+ * @returns recovery result after all filesystem transitions settle.
+ * @internal
+ */
+async runLegacyPublication<T>(id: string, recover: () => Promise<T>): Promise<T>
+
+/**
+ * Make the next Session compose a new generation of one committed preset.
+ *
+ * Directory-owned inputs can change while the composition file's stamp stays
+ * identical. Removing only the pointer makes the next mount re-read the whole
+ * preset directory; agents already joined keep their existing generation.
+ * @param id - committed preset id whose next mount must be fresh.
+ */
+refreshStanding(id: string): void
 ```
 
 Types: [ScopeKey](scope.md)
 
-Source: [`packages/preset/agent-presets/src/index.ts:82`](../../packages/preset/agent-presets/src/index.ts)
+Source: [`packages/preset/agent-presets/src/index.ts:114`](../../packages/preset/agent-presets/src/index.ts)
 
 <a id="ctxagents--agentregistry"></a>
 
@@ -729,101 +896,6 @@ roots(): Agent[]
 ```
 
 Source: [`packages/core/agent/src/index.ts:256`](../../packages/core/agent/src/index.ts)
-
-<a id="ctxblueprintadapter--blueprintadapter"></a>
-
-### `ctx.blueprintAdapter` — `BlueprintAdapter`
-
-Project and narrowly edit real agent presets for Interactive Blueprint.
-
-```ts cordis-catalog
-/**
- * Project one preset through the Host Remote API.
- * @param request - preset identity.
- * @returns one freshly assembled Blueprint.
- */
-@Remote('get') async get(request: BlueprintGetRequest): Promise<Blueprint>
-
-/**
- * Project preset text, its mounted runtime assembly, and effective permissions.
- * @param presetId - preset resolved by the real roster.
- * @param options - optional live agent for session-specific assembly and access.
- * @returns one JSON-serializable Blueprint.
- */
-async read(presetId: string, options: BlueprintReadOptions = {}): Promise<Blueprint>
-
-/**
- * Update the role-only Identity slot in one supported persona sentence.
- * @param request - optimistic Identity update addressed by its stable node id.
- * @returns the Blueprint re-read from the next preset generation.
- */
-async updateIdentity(request: BlueprintIdentityWrite): Promise<Blueprint>
-
-/**
- * Update the inferred Purpose sentence in the real persona scalar.
- * @param request - optimistic single-line update.
- * @returns the Blueprint re-read from the next preset generation.
- */
-async updatePurpose(request: BlueprintTextWrite): Promise<Blueprint>
-
-/**
- * Update one numbered Behavior in the real persona scalar.
- * @param request - optimistic item update.
- * @returns the Blueprint re-read from the next preset generation.
- */
-async updateBehavior(request: BlueprintBehaviorWrite): Promise<Blueprint>
-
-/**
- * Update the uniquely anchored Output item in the real persona scalar.
- * @param request - optimistic inferred-output update.
- * @returns the Blueprint re-read from the next preset generation.
- */
-async updateOutput(request: BlueprintOutputWrite): Promise<Blueprint>
-
-/**
- * Add or remove Web Fetch by updating the real `tool-web.config.fetch` field.
- * @param request - optimistic capability update.
- * @returns the Blueprint re-read from the next preset generation.
- */
-async setWebFetch(request: Omit<BlueprintCapabilityWrite, 'capability'>): Promise<Blueprint>
-
-/**
- * Enable or disable one admitted Web capability through its typed preset field.
- * @param request - optimistic capability update.
- * @returns the Blueprint re-read from the next preset generation.
- */
-async setCapability(request: BlueprintCapabilityWrite): Promise<Blueprint>
-
-/**
- * Apply one confirmed Change Set after whole-set preflight and in-memory staging.
- * @param request - source-owned Proposal identity plus an exact copy of its closed typed transaction.
- * @returns the immutable terminal transaction evidence; only `committed` changes the preset without recovery.
- */
-@Remote async applyChangeSet(request: BlueprintApplyChangeSetRequest): Promise<BlueprintApplyChangeSetResult>
-
-/**
- * Dismiss one exact durable Proposal without changing its preset.
- * @param request - source Session, interaction, and Proposal Tool-call identity.
- * @returns the immutable cancellation terminal recovered by later context refreshes.
- */
-@Remote async cancelChangeSet(request: BlueprintCancelChangeSetRequest): Promise<BlueprintProposalCancellation>
-
-/**
- * Synchronize one live conversation's optional Blueprint context and proposal Tool.
- * @param request - Session plus target projection, Creator Draft, or Session alone to clear.
- * @returns scoped conversation state and that Session's recorded Apply outcomes.
- */
-@Remote async setConversationContext( request: BlueprintConversationContextRequest, ): Promise<BlueprintConversationContextResult>
-
-/**
- * Compare one new Session's prompt content, tool schemas, permissions, and preset identity with a fresh projection.
- * @param request - expected preset revision, live Session identity, and optional P0 Change Set receipt.
- * @returns digest-only runtime evidence; raw prompt and schemas remain on the Host.
- */
-@Remote async validateSession(request: BlueprintValidateSessionRequest): Promise<BlueprintSessionValidation>
-```
-
-Source: [`packages/bundle/shared-blueprint/src/host/index.ts:320`](../../packages/bundle/shared-blueprint/src/host/index.ts)
 
 <a id="agent-events"></a>
 

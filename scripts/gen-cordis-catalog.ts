@@ -53,7 +53,6 @@ export const SERVICE_PAGE: Record<string, string> = {
   agentLoop: 'core.md',
   agentDefaultModel: 'core.md',
   agentPresets: 'core.md',
-  blueprintAdapter: 'core.md',
   agents: 'core.md',
   apiProxy: 'typert.md',
   approval: 'approval.md',
@@ -129,7 +128,7 @@ export const SERVICE_PAGE: Record<string, string> = {
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   agent: 'not a service: the DX accessor field on Agent.ctx (root accessor defaulting to undefined) — docs/subsystems/core.md owns the Agent handle',
-  agentPresetSessionIntent: 'client-side interface-typed browser service — packages/client/ui-agent-preset/README.md owns the API',
+  blueprintAdapter: 'installable add-on service — packages/bundle/shared-blueprint/README.md owns the API',
   appExit: 'not a service: launcher-provided bounded process-exit callback — packages/boot/cmdline/README.md owns the launcher contract',
   cmdlineArgs: 'not a service: launcher-provided immutable app argument accessor — packages/boot/cmdline/README.md owns the launcher contract',
   configuredAgentIdentities: 'not a service: launcher-provided boot-context value (ConfiguredAgentIdentities | undefined) — packages/core/agent-loop/README.md owns this launcher contract',
@@ -515,6 +514,11 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   InsertTextRequest: 'event-local request contract is owned by packages/client/ui-input-trigger/src/types.ts',
   AgentHandle: 'agent ownership handle is owned by packages/core/agent/README.md',
   AgentPreset: 'discovered preset record is owned by packages/preset/agent-presets/README.md',
+  AgentPresetProjectionSnapshot: 'projection snapshot is owned by packages/preset/agent-presets/README.md',
+  AgentPresetTransaction: 'isolated publication transaction is owned by packages/preset/agent-presets/README.md',
+  AgentPresetTransactionDisposition: 'transaction terminal result is owned by packages/preset/agent-presets/README.md',
+  AgentPresetTransactionOptions: 'transaction preparation input is owned by packages/preset/agent-presets/README.md',
+  AgentPresetTransactionRecovery: 'transaction recovery result is owned by packages/preset/agent-presets/README.md',
   PresetMetadata: 'preset display text is owned by packages/preset/agent-presets/README.md',
   Blueprint: 'projection result is owned by packages/bundle/shared-blueprint/README.md',
   BlueprintApplyChangeSetRequest: 'transaction input is owned by packages/bundle/shared-blueprint/README.md',

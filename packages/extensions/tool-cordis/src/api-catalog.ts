@@ -142,6 +142,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the presets, first-root-wins per id.',
       },
       {
+        signature: 'async listFor(agentCtx: Context): Promise<AgentPreset[]>',
+        description: 'List the roster through one agent\'s scoped preset projection.\n\nA registered candidate replaces only the committed row with the same id; every other row and its order remain unchanged. A candidate for an id not yet committed is appended, which keeps it addressable to its owner without publishing it through list.',
+        parameters: [{ name: 'agentCtx', description: 'scoped agent whose private overlay may be visible.' }],
+        returns: 'the committed roster with that scope\'s preset overlaid.',
+      },
+      {
         signature: 'async resolve(id?: string): Promise<AgentPreset>',
         description: 'Resolve one preset by id.\n\nA broken preset resolves — deleting one, reading one, and reporting one all need the row — and the mounting paths refuse it AFTER resolution through resolveMountable.',
         parameters: [{ name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
@@ -149,11 +155,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
+        signature: 'async resolveFor(agentCtx: Context, id?: string): Promise<AgentPreset>',
+        description: 'Resolve a preset through one agent\'s private projection.',
+        parameters: [{ name: 'agentCtx', description: 'scoped agent whose overlay may satisfy the id.' }, { name: 'id', description: 'preset id, or `undefined` for {@link defaultId}.' }],
+        returns: 'the overlay for its target id, otherwise the committed preset.',
+        throws: ['when neither the overlay nor the committed roster supplies the id.'],
+      },
+      {
+        signature: 'registerScopedOverlay(agentCtx: Context, preset: AgentPreset): () => Promise<void>',
+        description: 'Register one private preset projection for a scoped agent.\n\nOnly the explicit `*For(agentCtx)` methods read the overlay; ordinary roster methods continue to address committed files.',
+        parameters: [{ name: 'agentCtx', description: 'scoped agent that owns the projection.' }, { name: 'preset', description: 'replacement preset identity and composition path.' }],
+        returns: 'an idempotent disposer that removes this exact registration.',
+        throws: ['when the context is unscoped or already owns an overlay.'],
+      },
+      {
         signature: 'async mount(agentCtx: Context, id?: string): Promise<AgentPreset>',
         description: 'Compose one agent from a preset: ensure the preset\'s standing mount, then parent the agent\'s scope key to it so the mount\'s registrations and listeners cover this agent.\n\nCall from the agent factory\'s `setup(agentCtx)`; a rejection there rolls the agent creation back, so a broken preset never yields a half-composed session.',
         parameters: [{ name: 'agentCtx', description: 'the agent\'s scope context.' }, { name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
         returns: 'the preset that was composed, for the caller to record.',
         throws: ['when the preset is unknown or its composition is unusable.'],
+      },
+      {
+        signature: 'async mountIsolated(agentCtx: Context, preset: AgentPreset): Promise<AgentPreset>',
+        description: 'Compose one fresh agent from an isolated preset without publishing a standing generation.\n\nThe candidate receives an independent composition scope that is parented only to this agent and disposed with it. It therefore exercises the same Loader and scope checks as a real Session while remaining unreachable to sessions on the committed preset id.',
+        parameters: [{ name: 'agentCtx', description: 'fresh agent\'s scope context.' }, { name: 'preset', description: 'exact isolated composition to mount.' }],
+        returns: 'the isolated preset that was composed.',
+        throws: ['when the agent is unscoped, already composed, or the preset is unusable.'],
       },
       {
         signature: 'composeFrom(agentCtx: Context, parentCtx: Context): string | undefined',
@@ -176,10 +203,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
+        signature: 'async readFor(agentCtx: Context, id: string): Promise<string>',
+        description: 'Read a composition through one agent\'s private preset projection.',
+        parameters: [{ name: 'agentCtx', description: 'scoped agent whose overlay may satisfy the id.' }, { name: 'id', description: 'the preset id.' }],
+        returns: 'the selected composition exactly as stored.',
+      },
+      {
+        signature: 'async validateFor(agentCtx: Context, id: string): Promise<void>',
+        description: 'Mount-validate a preset through one agent\'s private projection.\n\nThe candidate target is mounted in a disposable one-shot scope so neither success nor failure enters the committed standing cache. Other ids retain the ordinary standing-validation behavior.',
+        parameters: [{ name: 'agentCtx', description: 'scoped agent whose overlay may satisfy the id.' }, { name: 'id', description: 'the preset id to validate.' }],
+      },
+      {
         signature: 'async copy(from: string, id: string, name?: string): Promise<void>',
         description: 'Create a locally authored preset by copying an existing one whole.\n\nCopy is the only authoring write. Composition text never crosses this seam: the source is named by id and its directory is copied as it stands, so the copy is exactly as loadable as its source and authoring grants no capability the roster did not already carry. The copy is NOT mounted to validate — a source that mounts today yields a copy that mounts today.',
         parameters: [{ name: 'from', description: 'the preset the copy starts from; shipped presets are the primary source, so any trust is accepted.' }, { name: 'id', description: 'the new preset\'s id, which becomes its directory name.' }, { name: 'name', description: 'display name for the copy; absent falls back to the id.' }],
         throws: ['when the source is unknown, the id is unusable or already taken, or the deployment configures no writable root.'],
+      },
+      {
+        signature: 'async copyFor(agentCtx: Context, from: string, id: string, name?: string): Promise<void>',
+        description: 'Copy through one scoped projection, refusing a second authoring target.',
+        parameters: [{ name: 'agentCtx', description: 'executing scoped agent.' }, { name: 'from', description: 'the committed source preset id.' }, { name: 'id', description: 'the new preset id.' }, { name: 'name', description: 'optional display name.' }],
+        throws: ['when the scope owns a preset overlay.'],
       },
       {
         signature: 'async remove(id: string): Promise<void>',
@@ -206,6 +250,65 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
         returns: 'the standing scope key readers pass as a registry view scope.',
         throws: ['when the preset is unknown or its composition is unusable.'],
+      },
+      {
+        signature: 'async projectionSnapshot(id?: string): Promise<AgentPresetProjectionSnapshot>',
+        description: 'Capture one committed composition and its standing runtime generation.\n\nResolution, content read, and mount share one preset filesystem operation, so a Host projection cannot combine composition text from one publication with registrations from another.',
+        parameters: [{ name: 'id', description: 'the preset id, or `undefined` for {@link defaultId}.' }],
+        returns: 'preset metadata, composition text, and the matching standing key.',
+        throws: ['when the preset is unknown or its composition is unusable.'],
+      },
+      {
+        signature: 'async prepareTransaction( id: string, options: AgentPresetTransactionOptions, ): Promise<AgentPresetTransaction>',
+        description: 'Prepare or re-adopt one isolated transaction against a committed preset.',
+        parameters: [{ name: 'id', description: 'writable committed preset id.' }, { name: 'options', description: 'stable request key and accepted composition revision.' }],
+        returns: 'durable transaction handle.',
+      },
+      {
+        signature: 'async recoverTransaction(transaction: AgentPresetTransaction): Promise<AgentPresetTransactionRecovery>',
+        description: 'Recover interrupted preparation or settlement while excluding committed readers.',
+        parameters: [{ name: 'transaction', description: 'durable transaction handle.' }],
+        returns: 'reconstructed active or terminal state.',
+      },
+      {
+        signature: 'async resolveTransaction(transaction: AgentPresetTransaction): Promise<AgentPreset>',
+        description: 'Resolve the private candidate without exposing it through committed roster reads.',
+        parameters: [{ name: 'transaction', description: 'active transaction handle.' }],
+        returns: 'preset metadata with its composition path redirected to the candidate.',
+      },
+      {
+        signature: 'async fenceTransaction(transaction: AgentPresetTransaction): Promise<string>',
+        description: 'Fence one quiescent candidate for external inspection or validation.',
+        parameters: [{ name: 'transaction', description: 'active transaction handle.' }],
+        returns: 'stable complete-tree digest.',
+      },
+      {
+        signature: 'async publishTransaction( transaction: AgentPresetTransaction, candidateTreeDigest: string, ): Promise<AgentPresetTransactionDisposition>',
+        description: 'Atomically publish a validated candidate against its unchanged baseline.\n\nCommitted readers are excluded for the complete crash-recoverable rename sequence. A successful publication also invalidates the standing pointer, so the next agent receives the published directory generation.',
+        parameters: [{ name: 'transaction', description: 'active or interrupted publishing transaction.' }, { name: 'candidateTreeDigest', description: 'complete tree digest retained across validation.' }],
+        returns: 'durable publication evidence.',
+      },
+      {
+        signature: 'async discardTransaction( transaction: AgentPresetTransaction, candidateTreeDigest: string, ): Promise<AgentPresetTransactionDisposition>',
+        description: 'Record a safe no-publication settlement against the unchanged baseline.',
+        parameters: [{ name: 'transaction', description: 'active or publish-prepared transaction.' }, { name: 'candidateTreeDigest', description: 'stable candidate tree being abandoned.' }],
+        returns: 'durable discard evidence.',
+      },
+      {
+        signature: 'async cleanupTransaction(transaction: AgentPresetTransaction): Promise<void>',
+        description: 'Remove isolated storage after the consumer has durably recorded settlement.',
+        parameters: [{ name: 'transaction', description: 'settled transaction handle.' }],
+      },
+      {
+        signature: 'async runLegacyPublication<T>(id: string, recover: () => Promise<T>): Promise<T>',
+        description: 'Exclude committed readers while a pre-transaction consumer recovers its old storage format.\n\nNew consumers must use the typed transaction methods. This callback exists only until already-persisted external journals have crossed their recovery horizon; it must not create new transaction data.',
+        parameters: [{ name: 'id', description: 'committed preset whose legacy journal may rename its directory.' }, { name: 'recover', description: 'idempotent recovery of an existing legacy journal.' }],
+        returns: 'recovery result after all filesystem transitions settle.',
+      },
+      {
+        signature: 'refreshStanding(id: string): void',
+        description: 'Make the next Session compose a new generation of one committed preset.\n\nDirectory-owned inputs can change while the composition file\'s stamp stays identical. Removing only the pointer makes the next mount re-read the whole preset directory; agents already joined keep their existing generation.',
+        parameters: [{ name: 'id', description: 'committed preset id whose next mount must be fresh.' }],
       },
     ],
   },
@@ -381,85 +484,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'ref', description: 'durable reference from the session log.' }, { name: 'signal', description: 'optional cancellation for backend read and verification work.' }],
         returns: 'the verified bytes and canonical reference.',
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
-      },
-    ],
-  },
-  {
-    key: 'blueprintAdapter',
-    summary: 'Project and narrowly edit real agent presets for Interactive Blueprint.',
-    description: 'Project and narrowly edit real agent presets for Interactive Blueprint.',
-    methods: [
-      {
-        signature: '@Remote(\'get\') async get(request: BlueprintGetRequest): Promise<Blueprint>',
-        description: 'Project one preset through the Host Remote API.',
-        parameters: [{ name: 'request', description: 'preset identity.' }],
-        returns: 'one freshly assembled Blueprint.',
-      },
-      {
-        signature: 'async read(presetId: string, options: BlueprintReadOptions = {}): Promise<Blueprint>',
-        description: 'Project preset text, its mounted runtime assembly, and effective permissions.',
-        parameters: [{ name: 'presetId', description: 'preset resolved by the real roster.' }, { name: 'options', description: 'optional live agent for session-specific assembly and access.' }],
-        returns: 'one JSON-serializable Blueprint.',
-      },
-      {
-        signature: 'async updateIdentity(request: BlueprintIdentityWrite): Promise<Blueprint>',
-        description: 'Update the role-only Identity slot in one supported persona sentence.',
-        parameters: [{ name: 'request', description: 'optimistic Identity update addressed by its stable node id.' }],
-        returns: 'the Blueprint re-read from the next preset generation.',
-      },
-      {
-        signature: 'async updatePurpose(request: BlueprintTextWrite): Promise<Blueprint>',
-        description: 'Update the inferred Purpose sentence in the real persona scalar.',
-        parameters: [{ name: 'request', description: 'optimistic single-line update.' }],
-        returns: 'the Blueprint re-read from the next preset generation.',
-      },
-      {
-        signature: 'async updateBehavior(request: BlueprintBehaviorWrite): Promise<Blueprint>',
-        description: 'Update one numbered Behavior in the real persona scalar.',
-        parameters: [{ name: 'request', description: 'optimistic item update.' }],
-        returns: 'the Blueprint re-read from the next preset generation.',
-      },
-      {
-        signature: 'async updateOutput(request: BlueprintOutputWrite): Promise<Blueprint>',
-        description: 'Update the uniquely anchored Output item in the real persona scalar.',
-        parameters: [{ name: 'request', description: 'optimistic inferred-output update.' }],
-        returns: 'the Blueprint re-read from the next preset generation.',
-      },
-      {
-        signature: 'async setWebFetch(request: Omit<BlueprintCapabilityWrite, \'capability\'>): Promise<Blueprint>',
-        description: 'Add or remove Web Fetch by updating the real `tool-web.config.fetch` field.',
-        parameters: [{ name: 'request', description: 'optimistic capability update.' }],
-        returns: 'the Blueprint re-read from the next preset generation.',
-      },
-      {
-        signature: 'async setCapability(request: BlueprintCapabilityWrite): Promise<Blueprint>',
-        description: 'Enable or disable one admitted Web capability through its typed preset field.',
-        parameters: [{ name: 'request', description: 'optimistic capability update.' }],
-        returns: 'the Blueprint re-read from the next preset generation.',
-      },
-      {
-        signature: '@Remote async applyChangeSet(request: BlueprintApplyChangeSetRequest): Promise<BlueprintApplyChangeSetResult>',
-        description: 'Apply one confirmed Change Set after whole-set preflight and in-memory staging.',
-        parameters: [{ name: 'request', description: 'source-owned Proposal identity plus an exact copy of its closed typed transaction.' }],
-        returns: 'the immutable terminal transaction evidence; only `committed` changes the preset without recovery.',
-      },
-      {
-        signature: '@Remote async cancelChangeSet(request: BlueprintCancelChangeSetRequest): Promise<BlueprintProposalCancellation>',
-        description: 'Dismiss one exact durable Proposal without changing its preset.',
-        parameters: [{ name: 'request', description: 'source Session, interaction, and Proposal Tool-call identity.' }],
-        returns: 'the immutable cancellation terminal recovered by later context refreshes.',
-      },
-      {
-        signature: '@Remote async setConversationContext( request: BlueprintConversationContextRequest, ): Promise<BlueprintConversationContextResult>',
-        description: 'Synchronize one live conversation\'s optional Blueprint context and proposal Tool.',
-        parameters: [{ name: 'request', description: 'Session plus target projection, Creator Draft, or Session alone to clear.' }],
-        returns: 'scoped conversation state and that Session\'s recorded Apply outcomes.',
-      },
-      {
-        signature: '@Remote async validateSession(request: BlueprintValidateSessionRequest): Promise<BlueprintSessionValidation>',
-        description: 'Compare one new Session\'s prompt content, tool schemas, permissions, and preset identity with a fresh projection.',
-        parameters: [{ name: 'request', description: 'expected preset revision, live Session identity, and optional P0 Change Set receipt.' }],
-        returns: 'digest-only runtime evidence; raw prompt and schemas remain on the Host.',
       },
     ],
   },
@@ -1354,6 +1378,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'In-memory session store (`ctx.sessions`).',
     description: 'In-memory session store (`ctx.sessions`).\n\nPersistence is intentionally not implemented here — persistence plugins subscribe to `session/event` and flush on `session/flush` / dispose.',
     methods: [
+      {
+        signature: 'readonly eventTypes: SessionEventTypeRegistry = new SessionEventTypeRegistry()',
+        description: 'Required durable event types supplied by currently composed plugins.',
+        parameters: [],
+      },
       {
         signature: 'create(id?: SessionId, options?: CreateSessionOptions): Session',
         description: 'Create a session owned by the calling fiber: disposing that fiber stops event notification and removes the session from the store. `options.seed` populates the session with a copy of those events (replay/fork); `options.meta` attaches creation metadata (validated absolute `cwd`, seed and parent lineage, and delegation depth) as the immutable SessionHeader (the store fills `version`/`id`/`createdAt`).\n\nFor an agent whose session must be torn down IN ORDER with its loop (so the loop\'s final events are published before the store attachment ends), do NOT use this — fold the session lifecycle into the agent\'s own effect via prepare + enter + announce (see `dsh-agent-loop`\'s creation transaction).',
@@ -2723,6 +2752,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
   },
   {
+    name: 'AgentPresetProjectionSnapshot',
+    declaration: 'export interface AgentPresetProjectionSnapshot {\n    readonly preset: AgentPreset;\n    readonly composition: string;\n    readonly standingKey: ScopeKey;\n}',
+  },
+  {
+    name: 'AgentPresetTransaction',
+    declaration: 'export interface AgentPresetTransaction {\n    readonly version: 1;\n    readonly transactionId: string;\n    readonly targetPath: string;\n    readonly baseRevision: string;\n    readonly baselineTreeDigest: string;\n}',
+  },
+  {
+    name: 'AgentPresetTransactionDisposition',
+    declaration: 'export interface AgentPresetTransactionDisposition {\n    readonly transactionId: string;\n    readonly candidateTreeDigest: string;\n    readonly finalTreeDigest: string;\n    readonly disposition: \'committed\' | \'discarded\';\n}',
+  },
+  {
+    name: 'AgentPresetTransactionOptions',
+    declaration: 'export interface AgentPresetTransactionOptions {\n    key: string;\n    expectedRevision: string;\n}',
+  },
+  {
+    name: 'AgentPresetTransactionRecovery',
+    declaration: 'export type AgentPresetTransactionRecovery = {\n    state: \'active\';\n} | {\n    state: \'committed\';\n    disposition: AgentPresetTransactionDisposition;\n} | {\n    state: \'discarded\';\n    disposition: AgentPresetTransactionDisposition;\n};',
+  },
+  {
     name: 'AgentSetup',
     declaration: 'export type AgentSetup = (agentCtx: Context) => AgentSetupCommit | Promise<AgentSetupCommit | void> | void;',
   },
@@ -2813,190 +2862,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'BashEnvVariableInfo',
     declaration: 'export interface BashEnvVariableInfo extends BashEnvVariable {\n    contributor: string;\n    key: DshEnvironmentKey;\n}',
-  },
-  {
-    name: 'Blueprint',
-    declaration: 'export interface Blueprint {\n    schemaVersion: 1;\n    sourceLanguage?: string;\n    preset: {\n        id: string;\n        trust: \'system\' | \'user\';\n        name?: string;\n        description?: string;\n    };\n    revision: string;\n    nodes: BlueprintNode[];\n    runtime: BlueprintRuntimeSnapshot;\n    mappingGaps: BlueprintMappingGap[];\n}',
-  },
-  {
-    name: 'BlueprintApplyChangeSetRequest',
-    declaration: 'export interface BlueprintApplyChangeSetRequest {\n    sourceSessionId: string;\n    routeId: string;\n    changeSetId: string;\n    presetId: string;\n    baseRevision: string;\n    operations: BlueprintChangeSetOperation[];\n}',
-  },
-  {
-    name: 'BlueprintApplyChangeSetResult',
-    declaration: 'export interface BlueprintApplyChangeSetResult {\n    sourceSessionId: string;\n    routeId: string;\n    changeSetId: string;\n    baseRevision: string;\n    committedRevision?: string;\n    status: BlueprintApplyChangeSetStatus;\n    operations: BlueprintChangeSetOperation[];\n    preflight: {\n        ok: true;\n    } | {\n        ok: false;\n        reason: string;\n    };\n    unexpectedDrift: string[];\n    failure?: string;\n}',
-  },
-  {
-    name: 'BlueprintApplyChangeSetStatus',
-    declaration: 'export type BlueprintApplyChangeSetStatus = \'committed\' | \'preflight_failed\' | \'staging_failed\' | \'commit_failed\' | \'reprojection_failed_recovered\' | \'reprojection_failed_conflict\' | \'reprojection_failed_recovery_failed\';',
-  },
-  {
-    name: 'BlueprintApplyReceipt',
-    declaration: 'export interface BlueprintApplyReceipt extends BlueprintApplyResultEvent {\n    terminalSeq: number;\n}',
-  },
-  {
-    name: 'BlueprintApplyResultEvent',
-    declaration: 'export interface BlueprintApplyResultEvent {\n    sourceSessionId: string;\n    routeId: string;\n    proposalResultSeq: number;\n    presetId: string;\n    result: BlueprintApplyChangeSetResult;\n}',
-  },
-  {
-    name: 'BlueprintBehaviorWrite',
-    declaration: 'export interface BlueprintBehaviorWrite extends BlueprintTextWrite {\n    ordinal: number;\n}',
-  },
-  {
-    name: 'BlueprintCancelChangeSetRequest',
-    declaration: 'export interface BlueprintCancelChangeSetRequest {\n    sourceSessionId: string;\n    routeId: string;\n    changeSetId: string;\n}',
-  },
-  {
-    name: 'BlueprintCapabilityAuthoringEvent',
-    declaration: 'export type BlueprintCapabilityAuthoringEvent = {\n    routeId: string;\n    sourceSessionId: string;\n    targetPresetId: string;\n    request: string;\n    kind: BlueprintCapabilityAuthoringKind;\n    baseRevision: string;\n    baselinePresets: BlueprintCapabilityPresetBaseline[];\n    baselineNodes: Pick<BlueprintNode, \'id\' | \'type\' | \'value\' | \'source\' | \'status\'>[];\n    baselineSkills: BlueprintRuntimeSkill[];\n    baselineDelegations: BlueprintRuntimeDelegation[];\n} & ({\n    state: \'started\';\n} | {\n    state: \'ended\';\n    startSeq: number;\n    outcome: \'completed\' | \'failed\' | \'cancelled\';\n    skillEvidence?: {\n        turnEndSeq: number;\n        revision: string;\n        skills: Pick<BlueprintRuntimeSkill, \'name\' | \'definitionDigest\' | \'invocation\'>[];\n    };\n    subagentEvidence?: {\n        turnEndSeq: number;\n        revision: string;\n        delegations: BlueprintRuntimeDelegation[];\n        verification: BlueprintSessionValidation;\n    };\n    subagentFailure?: {\n        turnEndSeq: number;\n        prerequisite: \'mounted_delegation_delta\' | \'runtime_conformance\' | \'projection\';\n        message: string;\n    };\n});',
-  },
-  {
-    name: 'BlueprintCapabilityAuthoringKind',
-    declaration: 'export type BlueprintCapabilityAuthoringKind = \'skill\' | \'subagent\';',
-  },
-  {
-    name: 'BlueprintCapabilityPresetBaseline',
-    declaration: 'export interface BlueprintCapabilityPresetBaseline {\n    id: string;\n    trust: \'system\' | \'user\';\n    name?: string;\n    description?: string;\n    order?: number;\n    broken?: string;\n    compositionDigest: string | null;\n}',
-  },
-  {
-    name: 'BlueprintCapabilityWrite',
-    declaration: 'export interface BlueprintCapabilityWrite {\n    presetId: string;\n    revision: string;\n    expected: boolean;\n    enabled: boolean;\n    capability: \'web-search\' | \'web-fetch\';\n}',
-  },
-  {
-    name: 'BlueprintChangeReceipt',
-    declaration: 'export interface BlueprintChangeReceipt {\n    changeSetId: string;\n    baseRevision: string;\n    committedRevision: string;\n    apply: {\n        preflight: \'pass\';\n        presetWrite: \'pass\';\n        reprojection: \'pass\';\n        semanticDrift: \'none\';\n    };\n    runtime: {\n        prompt: BlueprintConformanceStatus;\n        tools: BlueprintConformanceStatus;\n        skills: BlueprintConformanceStatus;\n        delegations: BlueprintConformanceStatus;\n        permissions: BlueprintConformanceStatus;\n        overall: BlueprintConformanceStatus;\n    };\n}',
-  },
-  {
-    name: 'BlueprintChangeSetCapabilityOperation',
-    declaration: 'export interface BlueprintChangeSetCapabilityOperation {\n    operation: \'setCapability\';\n    targetNodeId: string;\n    capability: \'web-search\' | \'web-fetch\';\n    expected: boolean;\n    enabled: boolean;\n}',
-  },
-  {
-    name: 'BlueprintChangeSetOperation',
-    declaration: 'export type BlueprintChangeSetOperation = BlueprintChangeSetTextOperation | BlueprintChangeSetCapabilityOperation;',
-  },
-  {
-    name: 'BlueprintChangeSetTextOperation',
-    declaration: 'export type BlueprintChangeSetTextOperation = {\n    targetNodeId: string;\n    expected: string;\n    value: string;\n} & ({\n    operation: \'updateIdentity\';\n} | {\n    operation: \'updatePurpose\';\n} | {\n    operation: \'updateBehavior\';\n} | {\n    operation: \'updateOutput\';\n});',
-  },
-  {
-    name: 'BlueprintConformanceStatus',
-    declaration: 'export type BlueprintConformanceStatus = \'pass\' | \'fail\';',
-  },
-  {
-    name: 'BlueprintConversationContextRequest',
-    declaration: 'export interface BlueprintConversationContextRequest {\n    sessionId: string;\n    presetId?: string;\n    revision?: string;\n    selectedNodeId?: string;\n    userChange?: BlueprintUserChangeInput;\n    directEditInput?: BlueprintStructuredEditInput;\n    capabilityInput?: {\n        routeId: string;\n        userRequest: string;\n    };\n    creatorDraft?: {\n        name: string;\n        status: \'creating\' | \'waiting\' | \'paused\' | \'ambiguity\';\n        targetPresetId?: string;\n        selectedNodeId?: string;\n    };\n    creatorAuthoring?: {\n        routeId: string;\n        sourceSessionId: string;\n        request: string;\n        name: string;\n        sourceLanguage?: string;\n        handoff?: NonNullable<BlueprintCreatorAuthoringRoute[\'handoff\']>;\n    };\n    recoverCreatorAuthoring?: boolean;\n    capabilityAuthoring?: {\n        routeId: string;\n        sourceSessionId: string;\n        targetPresetId: string;\n        request: string;\n        baseRevision: string;\n        kind: BlueprintCapabilityAuthoringKind;\n    };\n    recoverCapabilityAuthoring?: boolean;\n    capabilityAuthoringEnd?: {\n        outcome: \'completed\' | \'failed\' | \'cancelled\';\n    };\n}',
-  },
-  {
-    name: 'BlueprintConversationContextResult',
-    declaration: 'export interface BlueprintConversationContextResult {\n    applyReceipts?: BlueprintApplyReceipt[];\n    proposalCancellations?: BlueprintProposalCancellation[];\n    sessionId: string;\n    active: boolean;\n    presetId?: string;\n    selectedNodeId?: string;\n    directEditEnqueue?: {\n        routeId: string;\n        sourceSessionId: string;\n        routingInputSeq: number;\n        messageId: MessageId;\n    };\n    creatorAuthoring?: BlueprintCreatorAuthoringEvent & {\n        startSeq: number;\n        terminal?: BlueprintCreatorAuthoringEnd;\n    };\n    capabilityAuthoring?: {\n        routeId: string;\n        sourceSessionId: string;\n        targetPresetId: string;\n        request: string;\n        kind: BlueprintCapabilityAuthoringKind;\n        baseRevision: string;\n        startSeq: number;\n        baselineDelegationRowIds: string[];\n    };\n    capabilityAuthoringRecord?: {\n        routeId: string;\n        sourceSessionId: string;\n        targetPresetId: string;\n        request: string;\n        kind: BlueprintCapabilityAuthoringKind;\n        baseRevision: string;\n        startSeq: number;\n        baselineDelegationRowIds: string[];\n        state: \'active\' | \'ended\';\n        endSeq?: number;\n        outcome?: \'completed\' | \'failed\' | \'cancelled\';\n        subagentEvidence?: Extract<BlueprintCapabilityAuthoringEvent, {\n            state: \'ended\';\n        }>[\'subagentEvidence\'];\n        subagentFailure?: Extract<BlueprintCapabilityAuthoringEvent, {\n            state: \'ended\';\n         /* …truncated — full shape in source */',
-  },
-  {
-    name: 'BlueprintCreatorAuthoringEnd',
-    declaration: 'export type BlueprintCreatorAuthoringEnd = {\n    routeId: string;\n    startSeq: number;\n    turnEndSeq: number;\n} & ({\n    outcome: \'completed\';\n    targetPresetId: string;\n    validationSeq: number;\n} | {\n    outcome: \'failed\' | \'cancelled\';\n});',
-  },
-  {
-    name: 'BlueprintCreatorAuthoringEvent',
-    declaration: 'export interface BlueprintCreatorAuthoringEvent extends BlueprintCreatorAuthoringRoute {\n    sourceSessionId: string;\n    language?: string;\n}',
-  },
-  {
-    name: 'BlueprintCreatorAuthoringRoute',
-    declaration: 'export interface BlueprintCreatorAuthoringRoute {\n    operation: \'create-agent\';\n    routeId: string;\n    request: string;\n    name: string;\n    sourceLanguage?: string;\n    handoff?: {\n        sourceTurn: number;\n        targetCreatorSessionId: string;\n    };\n}',
-  },
-  {
-    name: 'BlueprintDelegationEvidence',
-    declaration: 'export interface BlueprintDelegationEvidence {\n    nodeId: string;\n    rowId: string;\n    tool: string;\n    provider: string;\n    providerAvailable: boolean;\n    sectionName?: string;\n    expectedSectionDigest?: string;\n    liveSectionDigest?: string;\n    status: BlueprintConformanceStatus;\n}',
-  },
-  {
-    name: 'BlueprintGetRequest',
-    declaration: 'export interface BlueprintGetRequest {\n    presetId: string;\n}',
-  },
-  {
-    name: 'BlueprintIdentityWrite',
-    declaration: 'export interface BlueprintIdentityWrite extends BlueprintTextWrite {\n    nodeId: string;\n}',
-  },
-  {
-    name: 'BlueprintMappingGap',
-    declaration: 'export interface BlueprintMappingGap {\n    field: string;\n    reason: string;\n}',
-  },
-  {
-    name: 'BlueprintNode',
-    declaration: 'export interface BlueprintNode {\n    id: string;\n    type: BlueprintNodeType;\n    value: JsonValue;\n    source: BlueprintSource;\n    status: BlueprintStatus;\n    editable: boolean;\n    adapterRef: string | null;\n}',
-  },
-  {
-    name: 'BlueprintNodeType',
-    declaration: 'export type BlueprintNodeType = \'purpose\' | \'identity\' | \'capability\' | \'behavior\' | \'output\' | \'access\';',
-  },
-  {
-    name: 'BlueprintOutputWrite',
-    declaration: 'export interface BlueprintOutputWrite extends BlueprintTextWrite {\n    ordinal: number;\n}',
-  },
-  {
-    name: 'BlueprintPromptEvidence',
-    declaration: 'export interface BlueprintPromptEvidence {\n    nodeId: string;\n    nodeType: \'identity\' | \'purpose\' | \'behavior\' | \'output\';\n    sectionName?: string;\n    expectedSectionDigest?: string;\n    liveSectionDigest?: string;\n    status: BlueprintConformanceStatus;\n}',
-  },
-  {
-    name: 'BlueprintProposalCancellation',
-    declaration: 'export interface BlueprintProposalCancellation {\n    sourceSessionId: string;\n    routeId: string;\n    proposalResultSeq: number;\n    changeSetId: string;\n    presetId: string;\n    baseRevision: string;\n    status: \'cancelled\';\n}',
-  },
-  {
-    name: 'BlueprintProposalValue',
-    declaration: 'export type BlueprintProposalValue = string | boolean;',
-  },
-  {
-    name: 'BlueprintReadOptions',
-    declaration: 'export interface BlueprintReadOptions {\n    agent?: Agent;\n    cwd?: string;\n}',
-  },
-  {
-    name: 'BlueprintRuntimeDelegation',
-    declaration: 'export interface BlueprintRuntimeDelegation {\n    rowId: string;\n    tool: string;\n    provider: string;\n    mode: \'one-shot\' | \'continuable\';\n    configDigest: string;\n    providerAvailable: boolean;\n    enabled: boolean;\n}',
-  },
-  {
-    name: 'BlueprintRuntimeSkill',
-    declaration: 'export interface BlueprintRuntimeSkill {\n    name: string;\n    description: string;\n    invocation: {\n        modelInvocable: boolean;\n        userInvocable: boolean;\n    };\n    scope: \'preset\' | \'inherited\';\n    provider: string;\n    source: string;\n    definitionDigest: string;\n}',
-  },
-  {
-    name: 'BlueprintRuntimeSnapshot',
-    declaration: 'export interface BlueprintRuntimeSnapshot {\n    tools: string[];\n    promptSections: string[];\n    skills: BlueprintRuntimeSkill[];\n    delegations: BlueprintRuntimeDelegation[];\n    permissions: {\n        preset: string;\n        sandbox?: string;\n        approval?: string;\n    } | null;\n}',
-  },
-  {
-    name: 'BlueprintSessionBindingEvidence',
-    declaration: 'export interface BlueprintSessionBindingEvidence {\n    status: BlueprintConformanceStatus;\n    sessionPresetId?: string;\n    composedPresetId?: string;\n    expectedRevision: string;\n    projectedRevision: string;\n    strictRevisionBound: false;\n}',
-  },
-  {
-    name: 'BlueprintSessionValidation',
-    declaration: 'export interface BlueprintSessionValidation {\n    sessionId: string;\n    presetId: string;\n    valid: boolean;\n    overall: BlueprintConformanceStatus;\n    binding: BlueprintSessionBindingEvidence;\n    prompt: {\n        status: BlueprintConformanceStatus;\n        evidence: BlueprintPromptEvidence[];\n    };\n    tools: {\n        status: BlueprintConformanceStatus;\n        evidence: BlueprintToolEvidence[];\n        missing: string[];\n        unexpected: string[];\n        schemaMismatches: string[];\n    };\n    skills: {\n        status: BlueprintConformanceStatus;\n        evidence: BlueprintSkillEvidence[];\n        missing: string[];\n        unexpected: string[];\n    };\n    delegations: {\n        status: BlueprintConformanceStatus;\n        evidence: BlueprintDelegationEvidence[];\n    };\n    permissions: {\n        status: BlueprintConformanceStatus;\n    };\n    changeReceipt?: BlueprintChangeReceipt;\n}',
-  },
-  {
-    name: 'BlueprintSkillEvidence',
-    declaration: 'export interface BlueprintSkillEvidence {\n    nodeId: string;\n    name: string;\n    actualPresent: boolean;\n    expectedDefinitionDigest: string;\n    liveDefinitionDigest?: string;\n    status: BlueprintConformanceStatus;\n}',
-  },
-  {
-    name: 'BlueprintSource',
-    declaration: 'export type BlueprintSource = \'preset\' | \'runtime\' | \'inherited\' | \'inferred\';',
-  },
-  {
-    name: 'BlueprintStatus',
-    declaration: 'export type BlueprintStatus = \'active\' | \'inactive\' | \'unmapped\';',
-  },
-  {
-    name: 'BlueprintStructuredEditInput',
-    declaration: 'export type BlueprintStructuredEditInput = {\n    sourceSessionId: string;\n    routeId: string;\n    nodeId: string;\n} & ({\n    nodeType: \'identity\' | \'purpose\' | \'behavior\' | \'output\';\n    expectedValue: string;\n    proposedValue: string;\n} | {\n    nodeType: \'capability\';\n    expectedValue: boolean;\n    proposedValue: boolean;\n});',
-  },
-  {
-    name: 'BlueprintTextWrite',
-    declaration: 'export interface BlueprintTextWrite {\n    presetId: string;\n    revision: string;\n    expected: string;\n    value: string;\n}',
-  },
-  {
-    name: 'BlueprintToolEvidence',
-    declaration: 'export interface BlueprintToolEvidence {\n    nodeId: string;\n    tool: string;\n    expectedEnabled: boolean;\n    actualPresent: boolean;\n    expectedSchemaDigest?: string;\n    liveSchemaDigest?: string;\n    status: BlueprintConformanceStatus;\n}',
-  },
-  {
-    name: 'BlueprintUserChangeInput',
-    declaration: 'export interface BlueprintUserChangeInput {\n    nodeId: string;\n    previousValue: BlueprintProposalValue;\n}',
-  },
-  {
-    name: 'BlueprintValidateSessionRequest',
-    declaration: 'export type BlueprintValidateSessionRequest = {\n    sessionId: string;\n    presetId: string;\n    expectedRevision: string;\n} & ({\n    sourceSessionId: string;\n    routeId: string;\n    changeSetId: string;\n} | {\n    sourceSessionId?: never;\n    routeId?: never;\n    changeSetId?: never;\n});',
   },
   {
     name: 'Branded',
@@ -4057,6 +3922,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionEventType',
     declaration: 'export type SessionEventType = keyof SessionEventMap;',
+  },
+  {
+    name: 'SessionEventTypeRegistration',
+    declaration: 'export interface SessionEventTypeRegistration {\n    readonly type: SessionEventType;\n    readonly owner: string;\n}',
+  },
+  {
+    name: 'SessionEventTypeRegistry',
+    declaration: 'export class SessionEventTypeRegistry {\n    register(registration: SessionEventTypeRegistration): () => void;\n    supports(type: string): boolean;\n}',
   },
   {
     name: 'SessionEventWindow',

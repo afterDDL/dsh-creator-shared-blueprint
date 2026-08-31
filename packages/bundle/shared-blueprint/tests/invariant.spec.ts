@@ -11,7 +11,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { ToolDispatchExecution, ToolExecutionResult, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import * as BlueprintAdapterInvariant from '../src/host/invariant.ts'
+import * as BlueprintAdapterInvariant from '../src/invariant.ts'
 import { createBlueprintUserChange } from '../src/host/proposal.ts'
 import { compositionRevision } from '../src/host/composition.ts'
 import type {

@@ -1,5 +1,5 @@
-# Opt-in Blueprint preview over the shipped Web composition. The ui-blueprint
-# Host half injects this caller-owned data before the normal browser plugin
+# Opt-in Blueprint preview over the shipped Web composition. The installed
+# shared-blueprint Host injects this caller-owned data before the normal browser
 # graph starts; it does not replace the shell, theme, components, or slots.
 
 - id: webserver
@@ -7,7 +7,7 @@
     host: 127.0.0.1
     port: 3082
 
-- id: ui-blueprint
+- id: shared-blueprint
   config:
     demoBootstrapJson: >-
       {"seeds":[],"creatorScenario":{"agent":{"id":"listed-company-research","label":"上市公司研究 Agent","trust":"user","description":"研究上市公司的业务、财务、估值和行业竞争。"},"blueprint":{"schemaVersion":1,"sourceLanguage":"zh","preset":{"id":"listed-company-research","trust":"user","name":"上市公司研究 Agent"},"revision":"demo-r1","nodes":[{"id":"identity:persona","type":"identity","value":"上市公司研究分析师，基于公开资料和用户提供的财报完成可追溯的公司研究。","source":"preset","status":"active","editable":true,"adapterRef":"identity"},{"id":"purpose:persona","type":"purpose","value":"研究上市公司的业务、财务表现、估值与行业竞争，并基于公开资料和用户提供的财报形成结构化研究报告。","source":"preset","status":"active","editable":true,"adapterRef":"purpose"},{"id":"capability:web-search","type":"capability","value":{"name":"Web Search","tool":"web_search","enabled":true},"source":"runtime","status":"active","editable":true,"adapterRef":"search"},{"id":"capability:web-fetch","type":"capability","value":{"name":"Web Fetch","tool":"web_fetch","enabled":true},"source":"runtime","status":"active","editable":true,"adapterRef":"fetch"},{"id":"capability:file-read","type":"capability","value":{"name":"File Read","tool":"read","enabled":true},"source":"runtime","status":"active","editable":false,"adapterRef":null},{"id":"behavior:1","type":"behavior","value":"财务指标提取：统一口径整理营收、利润、现金流和资产负债数据，并标明报告期。","source":"preset","status":"active","editable":true,"adapterRef":"behavior:1"},{"id":"behavior:2","type":"behavior","value":"公司横向比较：选择可比公司，对业务结构、增长、盈利能力和估值倍数进行比较。","source":"preset","status":"active","editable":true,"adapterRef":"behavior:2"},{"id":"behavior:3","type":"behavior","value":"区分事实、推断和结论，重要判断给出来源。","source":"preset","status":"active","editable":true,"adapterRef":"behavior:3"},{"id":"output:1","type":"output","value":"输出包含公司概览、业务分析、财务分析、估值分析、行业竞争与风险因素的结构化研究报告。","source":"preset","status":"active","editable":true,"adapterRef":"output:1"},{"id":"output:2","type":"output","value":"关键事实附来源，数据注明报告期与口径。","source":"preset","status":"active","editable":true,"adapterRef":"output:2"}],"runtime":{"tools":["web_search","web_fetch","read"],"promptSections":["deployment:persona"],"skills":[],"delegations":[],"permissions":null},"mappingGaps":[]}}}

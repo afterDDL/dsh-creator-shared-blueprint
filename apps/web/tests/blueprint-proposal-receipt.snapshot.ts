@@ -12,7 +12,7 @@ it('shows a confirmed Apply receipt in the runnable Blueprint Web example', asyn
     id: string
     config?: { demoBootstrapJson?: string }
   }[]
-  const bootstrap = JSON.parse(rows.find(row => row.id === 'ui-blueprint')!.config!.demoBootstrapJson!) as object
+  const bootstrap = JSON.parse(rows.find(row => row.id === 'shared-blueprint')!.config!.demoBootstrapJson!) as object
   mountAssembledApp({ blueprintDemo: bootstrap })
   await screen.findByDisplayValue(/我要一个上市公司研究 Agent/u, {}, { timeout: 10_000 })
   await waitFor(() => { expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Send message' }).disabled).toBe(false) })

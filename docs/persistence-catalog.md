@@ -235,6 +235,219 @@ Types: [TokenUsage](subsystems/llm-streaming.md)
 
 Source: [`packages/core/session/src/types.ts:273`](../packages/core/session/src/types.ts)
 
+### `blueprint/*`
+
+<a id="blueprintapply-result--log-only"></a>
+
+#### `blueprint/apply-result` — log-only
+
+```ts persistence-catalog
+/**
+ * Retains a confirmed Blueprint transaction outcome without waking the model.
+ * @param sourceSessionId - conversation owning the confirmation.
+ * @param routeId - interaction whose Proposal was confirmed.
+ * @param proposalResultSeq - successful Proposal Tool result that authorized the transaction.
+ * @param presetId - preset addressed by the transaction.
+ * @param result - terminal P0 outcome and exact typed operations.
+ */
+'blueprint/apply-result': BlueprintApplyResultEvent
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1062`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintcapability-authoring--log-only"></a>
+
+#### `blueprint/capability-authoring` — log-only
+
+```ts persistence-catalog
+/**
+ * Retains existing-preset capability authoring across client reloads.
+ * @param routeId - source interaction identity.
+ * @param sourceSessionId - existing-Agent conversation that owns the route.
+ * @param targetPresetId - existing preset Creator may modify.
+ * @param request - original capability outcome.
+ * @param kind - typed authoring mechanism.
+ * @param baselinePresets - exact roster content and metadata before authoring started.
+ * @param baselineSkills - exact scoped Skill definitions before authoring started.
+ * @param baselineDelegations - exact delegation rows and config digests before authoring started.
+ * @param state - lifecycle start or end marker.
+ */
+'blueprint/capability-authoring': BlueprintCapabilityAuthoringEvent
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1075`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintcapability-cancel-requested--log-only"></a>
+
+#### `blueprint/capability-cancel-requested` — log-only
+
+```ts persistence-catalog
+/**
+ * Checkpoints user cancellation before pending Creator work is retracted.
+ * @param routeId - owning capability route.
+ * @param startSeq - owning lifecycle start.
+ */
+'blueprint/capability-cancel-requested': BlueprintCapabilityCancelRequestedEvent
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1092`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintcapability-repair--log-only"></a>
+
+#### `blueprint/capability-repair` — log-only
+
+```ts persistence-catalog
+/**
+ * Records one internal candidate validation miss before the same Creator is resumed.
+ * @param routeId - owning capability route.
+ * @param startSeq - owning lifecycle start.
+ * @param turnEndSeq - failed Creator turn.
+ * @param attempt - one-based repair attempt.
+ * @param prerequisite - failed internal validation category.
+ * @param message - exact private diagnostic.
+ * @param repairMessageId - deterministic follow-up message identity.
+ */
+'blueprint/capability-repair': BlueprintCapabilityRepairEvent
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1086`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintcapability-verified--log-only"></a>
+
+#### `blueprint/capability-verified` — log-only
+
+```ts persistence-catalog
+/**
+ * Checkpoints fresh candidate verification before the filesystem publication transaction.
+ * @param routeId - owning capability route.
+ * @param startSeq - owning lifecycle start.
+ * @param turnEndSeq - verified Creator turn.
+ * @param candidateTreeDigest - stable complete candidate tree.
+ * @param kind - verified Skill or Subagent lane.
+ */
+'blueprint/capability-verified': BlueprintCapabilityVerifiedEvent
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1101`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintcreator-authoring--log-only"></a>
+
+#### `blueprint/creator-authoring` — log-only
+
+```ts persistence-catalog
+/**
+ * Retains one typed new-Agent request in the Creator Session that executes it.
+ * @param operation - fixed create-agent operation.
+ * @param routeId - routing Tool call identity.
+ * @param sourceSessionId - conversation that requested the new Agent.
+ * @param request - exact original user request.
+ * @param name - user-facing Draft name.
+ * @param sourceLanguage - optional open language metadata for authored semantic fields.
+ */
+'blueprint/creator-authoring': BlueprintCreatorAuthoringEvent
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1111`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintcreator-authoring-ended--log-only"></a>
+
+#### `blueprint/creator-authoring-ended` — log-only
+
+```ts persistence-catalog
+/**
+ * Closes one Creator task without changing its start or subsequent Session history.
+ * @param routeId - task identity from the accepted create-agent route.
+ * @param startSeq - owning Creator start event.
+ * @param turnEndSeq - authoring turn that supplied the terminal result.
+ * @param outcome - completed, failed, or explicitly cancelled task.
+ */
+'blueprint/creator-authoring-ended': BlueprintCreatorAuthoringEnd
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1119`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintproposal-cancelled--log-only"></a>
+
+#### `blueprint/proposal-cancelled` — log-only
+
+```ts persistence-catalog
+/**
+ * Retains one dismissed Proposal as an immutable source-and-route terminal.
+ * @param sourceSessionId - conversation that owns the Proposal.
+ * @param routeId - source interaction identity.
+ * @param changeSetId - Proposal Tool call identity.
+ * @param presetId - Proposal target.
+ * @param baseRevision - Proposal projection revision.
+ * @param status - fixed cancelled terminal state.
+ */
+'blueprint/proposal-cancelled': BlueprintProposalCancellation
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1053`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintroute-decision--log-only"></a>
+
+#### `blueprint/route-decision` — log-only
+
+```ts persistence-catalog
+/**
+ * Reserves one top-level operation per interaction before asynchronous route validation.
+ * @param routeId - interaction whose operation is reserved.
+ * @param sourceSessionId - operation-owning Session.
+ * @param userMessageId - current real user input identity.
+ * @param userMessageSeq - current real user event sequence.
+ * @param turn - source turn retained for terminal evidence.
+ * @param operation - model-classified operation admitted by Host provenance checks.
+ * @param callId - attempt whose tool/result determines acceptance.
+ * @param targetPresetId - current Blueprint target.
+ * @param provenance - direct message, target-bound capability action, or structured edit action.
+ */
+'blueprint/route-decision': BlueprintRouteDecision
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1043`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintrouting-input--log-only"></a>
+
+#### `blueprint/routing-input` — log-only
+
+```ts persistence-catalog
+/**
+ * Binds an explicit Blueprint UI action to its original admitted user message.
+ * @param routeId - distinct interaction identity issued for this action.
+ * @param sourceSessionId - Session receiving the request.
+ * @param messageId - exact submitted message identity.
+ * @param userRequest - original user text, excluding routing guidance.
+ * @param uiAction - UI operation constraint.
+ * @param targetPresetId - existing Agent addressed by the action.
+ * @param directEdit - exact staged source edit and P2 candidates for a direct-edit action.
+ */
+'blueprint/routing-input': BlueprintRoutingInputEvent
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1030`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
+<a id="blueprintuser-change--log-only"></a>
+
+#### `blueprint/user-change` — log-only
+
+```ts persistence-catalog
+/**
+ * Records a committed direct Blueprint edit before its plugin follow-up wakes the model.
+ * @param presetId - real preset changed by the user.
+ * @param nodeId - stable projected node identity.
+ * @param nodeType - semantic Blueprint section containing the node.
+ * @param label - human-readable node label.
+ * @param previousValue - scalar value before the direct edit.
+ * @param currentValue - scalar value in the fresh projection.
+ * @param operation - semantic update, enable, or disable operation.
+ * @param impactCandidates - deterministic nodes admitted for reconciliation.
+ */
+'blueprint/user-change': BlueprintUserChange
+```
+
+Source: [`packages/bundle/shared-blueprint/src/contract/types.ts:1131`](../packages/bundle/shared-blueprint/src/contract/types.ts)
+
 ### `command/*`
 
 <a id="commanddone--log-only"></a>
