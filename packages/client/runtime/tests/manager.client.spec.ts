@@ -760,6 +760,25 @@ describe('remaining branches', () => {
     expect(await manager.create()).toMatchObject({ ok: false })
   })
 
+  it('forwards an external preset requirement and retains the Host-confirmed preset', async () => {
+    const api = new FakeApiClient()
+    api.onCreate = () => Promise.resolve(ok({ sessionId: S1, agentPreset: 'external-specialist' }))
+    const manager = new SessionManager(api, fakeRemote())
+
+    await expect(manager.create({
+      workspaceId: 'w1' as never,
+      agentPreset: 'external-specialist',
+    })).resolves.toMatchObject({
+      ok: true, value: { sessionId: S1, agentPreset: 'external-specialist' },
+    })
+    expect(api.callsOf('session.create')).toEqual([{
+      workspaceId: 'w1', agentPreset: 'external-specialist',
+    }])
+    expect(manager.getListSnapshot().items[0]).toMatchObject({
+      sessionId: S1, agentPreset: 'external-specialist', blank: true,
+    })
+  })
+
   it('publishes a real Ungrouped summary from workspace-attach-failed', async () => {
     const api = new FakeApiClient()
     api.onCreate = () => Promise.resolve(err({

@@ -16,7 +16,7 @@
  */
 import type { Context, Fiber } from '@deepseek-ai/cordis'
 import type {
-  IApiClient, RpcError, RpcResult, SessionId, SubagentAddress, JobView, WorkspaceId,
+  IApiClient, RpcError, RpcResult, SessionId, SubagentAddress, JobView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 // Value import from the inline-safe wire layer (not the connection plugin):
 // plugin-to-plugin value imports are a bundle purity error.
@@ -29,6 +29,7 @@ import type { SnapshotStore } from '../contract/store.ts'
 import { createSnapshotStore } from '../contract/store.ts'
 import type { SessionFace } from '../contract/session.ts'
 import type { AgentContext, ISessions } from '../contract/sessions.ts'
+import type { SessionCreateOptions } from '../contract/sessions-port.ts'
 import { createScope, scopeOf as scopeTagOf } from '../agents/scope.ts'
 import type { ConversationRuntime } from './conversation-assembler.ts'
 import { SessionManager } from './manager.ts'
@@ -116,6 +117,24 @@ export class SessionCreateError extends Error {
     readonly requestedSessionId: SessionId | undefined,
   ) {
     super(`session create failed: ${rpcError.code}: ${rpcError.message}`)
+  }
+}
+
+/** A successful create response that did not confirm the requested runtime preset. */
+export class SessionPresetReadinessError extends Error {
+  override readonly name = 'SessionPresetReadinessError'
+
+  /**
+   * @param sessionId - Session the Host published.
+   * @param requestedPreset - preset the caller required before admitting prompts.
+   * @param actualPreset - preset echoed by the Host, when any.
+   */
+  constructor(
+    readonly sessionId: SessionId,
+    readonly requestedPreset: string,
+    readonly actualPreset: string | undefined,
+  ) {
+    super(`session "${sessionId}" did not confirm requested agent preset "${requestedPreset}"`)
   }
 }
 
@@ -478,14 +497,26 @@ export class SessionRuntime implements ISessions {
    * draft hand-off) may address the scope synchronously, without waiting a
    * notifier flush. The synchronous projection below makes this structural
    * rather than an accident of microtask ordering.
-   * @param opts - target workspace or directory and an optional preallocated id.
+   * When `agentPreset` is present, the Host response must echo that exact
+   * running preset before this method resolves. A caller can therefore open
+   * the returned Session and admit its first prompt without a client-side
+   * recompose race.
+   * @param opts - target location, optional identity, and required initial preset.
    * @returns the new session id.
    * @throws {SessionCreateError} with the requested id.
+   * @throws {SessionPresetReadinessError} when the Host does not confirm the requested preset.
    */
-  async create(opts: { workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId } = {}): Promise<SessionId> {
+  async create(opts: SessionCreateOptions = {}): Promise<SessionId> {
     const result = await this.manager.create(opts)
     if (!result.ok) throw new SessionCreateError(result.error, opts.sessionId)
     this.projectList()
+    if (opts.agentPreset !== undefined && result.value.agentPreset !== opts.agentPreset) {
+      throw new SessionPresetReadinessError(
+        result.value.sessionId,
+        opts.agentPreset,
+        result.value.agentPreset,
+      )
+    }
     return result.value.sessionId
   }
 

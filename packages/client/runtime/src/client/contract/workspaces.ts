@@ -10,6 +10,12 @@ import type { DirectoryListing, SessionId, WorkspaceId, WorkspaceView } from '@d
 import type { WorkspaceListState } from '../workspaces/service.ts'
 import type { ObservableSnapshot } from './store.ts'
 
+/** Requirements applied while resolving a New Session destination. */
+export interface SessionStartOptions {
+  /** Preset that the reused or created Session must already run. */
+  agentPreset?: string
+}
+
 /** The workspaces-service face injected as `ctx.workspaces`. */
 export interface IWorkspaces {
   /** The useWorkspaces standard feed (read face — writes stay inside the domain). */
@@ -17,17 +23,19 @@ export interface IWorkspaces {
   /**
    * Connect a Workspace to its reusable or freshly created blank session.
    * @param workspaceId - target workspace.
-   * @returns the connected session id.
+   * @param options - runtime requirements for the resolved Session.
+   * @returns the connected session id, ready for its first prompt.
    */
-  connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
+  connectWorkspace(workspaceId: WorkspaceId, options?: SessionStartOptions): Promise<SessionId>
   /**
    * The New Session flow: connect the explicit, current-Session, or recent
    * Workspace and open the resulting session; failures surface on the session
    * list state.
    * @param workspaceId - explicit target; omitted inherits the current
    * Session's Workspace before falling back to the recency projection.
+   * @param options - runtime requirements for the resolved Session.
    */
-  startSession(workspaceId?: WorkspaceId): void
+  startSession(workspaceId?: WorkspaceId, options?: SessionStartOptions): void
   /**
    * Register an existing path as a Workspace.
    * @param input - the Host create payload.

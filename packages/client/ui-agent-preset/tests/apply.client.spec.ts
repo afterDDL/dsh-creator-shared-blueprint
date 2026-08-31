@@ -527,7 +527,6 @@ describe('ui-agent-preset apply', () => {
     // new-session flow began.
     expect(section.startCreatorDraft).toBeDefined()
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('cordis')
-    expect(ctx.agentPresetSessionIntent.pending()).toBe('cordis')
     expect(workspaces.starts).toHaveLength(1)
 
     // A cross-screen stage carries the introduce cue; the chip acknowledges

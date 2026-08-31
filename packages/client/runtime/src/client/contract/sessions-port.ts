@@ -16,6 +16,8 @@ export interface SessionsPortSummary {
   /** Empty-log bit (blank sessions are reused by New Session instead of minting another). */
   blank: boolean
   cwd?: string
+  /** Agent preset the Session currently runs, when the deployment composes presets. */
+  agentPreset?: string
   updatedAt: number
 }
 
@@ -27,16 +29,28 @@ export interface SessionsPortList {
   phase: 'pending' | 'ready'
 }
 
+/** Options for creating one Host-owned Session. */
+export interface SessionCreateOptions {
+  /** Registered Workspace that owns the new Session. */
+  workspaceId?: WorkspaceId
+  /** Working directory used when no registered Workspace is selected. */
+  cwd?: string
+  /** Optional caller-allocated durable identity. */
+  sessionId?: SessionId
+  /** Agent preset that must be mounted before creation resolves. */
+  agentPreset?: string
+}
+
 /** The sessions-service face injected into sibling domains. */
 export interface SessionsPort {
   /** Observable list snapshot (read face only; writes stay inside the sessions domain). */
   readonly list: ObservableSnapshot<SessionsPortList>
   /**
    * Create a session on the host.
-   * @param opts - target workspace.
+   * @param opts - target location, optional identity, and required initial preset.
    * @returns the new session id.
    */
-  create(opts: { workspaceId: WorkspaceId }): Promise<SessionId>
+  create(opts: SessionCreateOptions): Promise<SessionId>
   /**
    * Select a session as current.
    * @param id - session id (must exist in the list store).

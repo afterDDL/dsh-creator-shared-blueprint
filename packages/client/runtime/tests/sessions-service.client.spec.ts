@@ -9,7 +9,9 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import { SessionCreateError, SessionRuntime, scopeOf } from '../src/client/sessions/service.ts'
+import {
+  SessionCreateError, SessionPresetReadinessError, SessionRuntime, scopeOf,
+} from '../src/client/sessions/service.ts'
 import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
 
 const sid = (s: string): SessionId => s as SessionId
@@ -492,6 +494,39 @@ describe('create', () => {
     expect(b.svc.list.getSnapshot().byId[born]).toMatchObject({ id: 'born', blank: true })
     expect(b.svc.binding(born)).toBeDefined()
     expect(b.svc.scope(born)).toBeDefined()
+  })
+
+  it('admits a requested preset only after the Host confirms the exact running composition', async () => {
+    const b = bench()
+    b.api.onCreate = () => Promise.resolve(ok({
+      sessionId: sid('specialist'), agentPreset: 'external-specialist',
+    }))
+
+    await expect(b.svc.create({
+      workspaceId: 'ws' as never,
+      agentPreset: 'external-specialist',
+    })).resolves.toBe('specialist')
+    expect(b.api.callsOf('session.create')).toEqual([{
+      workspaceId: 'ws', agentPreset: 'external-specialist',
+    }])
+    expect(b.svc.list.getSnapshot().byId[sid('specialist')]).toMatchObject({
+      agentPreset: 'external-specialist', blank: true,
+    })
+  })
+
+  it('rejects a created Session whose response does not confirm the requested preset', async () => {
+    const b = bench()
+    b.api.onCreate = () => Promise.resolve(ok({ sessionId: sid('unconfirmed') }))
+
+    const failure = await b.svc.create({ agentPreset: 'external-specialist' })
+      .catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(SessionPresetReadinessError)
+    expect(failure).toMatchObject({
+      sessionId: 'unconfirmed', requestedPreset: 'external-specialist', actualPreset: undefined,
+    })
+    expect(b.svc.list.getSnapshot().byId[sid('unconfirmed')]).toMatchObject({ blank: true })
+    expect(b.svc.list.getSnapshot().current).toBeUndefined()
   })
 
   it('lists the published id after Workspace attachment fails (publication precedes attachment)', async () => {

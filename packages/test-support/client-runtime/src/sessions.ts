@@ -5,7 +5,7 @@ import { createScope, scopeOf, SessionProvideChannel } from '@deepseek-ai/dsh-cl
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   AgentContext, ConversationSnapshot, ISessions, ObservableSnapshot, ProjectionsFace, SessionFace, SessionId,
-  SessionListState, SessionProvideDescriptor, SessionSearchResultItem, SessionSummary, SnapshotStore,
+  SessionCreateOptions, SessionListState, SessionProvideDescriptor, SessionSearchResultItem, SessionSummary, SnapshotStore,
   SubagentAddress,
 } from '@deepseek-ai/dsh-client-runtime/client'
 // The double reports the wire schema's own search bound, like the production
@@ -185,9 +185,11 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+      | 'clear' | 'create' | 'search' | 'fork'
     args: unknown[]
   }[] = []
+  /** Monotone identity source for fixture-created Sessions without a reserved id. */
+  private createdSessionCount = 0
 
   /** The wire schema's `session.search` result bound (production parity). */
   readonly searchResultLimit = SESSION_SEARCH_RESULT_LIMIT
@@ -438,6 +440,26 @@ export class TestSessions implements ISessions {
   refreshSubagents(parentSessionId: SessionId): Promise<void> {
     this.calls.push({ method: 'refreshSubagents', args: [parentSessionId] })
     return Promise.resolve()
+  }
+
+  /**
+   * Materialize a blank fixture Session with the requested initial preset.
+   * @param opts - production create options recorded for assertions.
+   * @returns the fixture Session id after it is locally addressable.
+   */
+  async create(opts: SessionCreateOptions = {}): Promise<SessionId> {
+    this.calls.push({ method: 'create', args: [opts] })
+    const id = opts.sessionId ?? `test-created-${++this.createdSessionCount}` as SessionId
+    if (this.records.has(id)) return id
+    return await this.add({
+      id,
+      summary: {
+        blank: true,
+        ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }),
+        ...(opts.agentPreset === undefined ? {} : { agentPreset: opts.agentPreset }),
+      },
+      snapshot: { blank: true },
+    }, { current: false })
   }
 
   /** Apply a confirmed preset switch into the fixture list, as production does. */

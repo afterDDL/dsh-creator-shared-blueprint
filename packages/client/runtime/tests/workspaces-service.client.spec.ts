@@ -295,6 +295,72 @@ describe('WorkspaceRuntime', () => {
     expect(api.callsOf('session.create')).toEqual([])
   })
 
+  it('reuses only a blank Session that already runs the requested external preset', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onWorkspaceList = () => Promise.resolve(ok({
+      items: [workspace('alpha', [sid('default-blank'), sid('specialist-blank')])] as never[],
+    }))
+    api.onList = () => Promise.resolve(ok({ items: [
+      {
+        sessionId: sid('default-blank'), updatedAt: 2, running: false, blank: true,
+        cwd: '/w/alpha', agentPreset: 'standard',
+      },
+      {
+        sessionId: sid('specialist-blank'), updatedAt: 1, running: false, blank: true,
+        cwd: '/w/alpha', agentPreset: 'external-specialist',
+      },
+    ] as never[] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+
+    await expect(workspaces.connectWorkspace(wid('alpha'), {
+      agentPreset: 'external-specialist',
+    })).resolves.toBe('specialist-blank')
+    expect(api.callsOf('session.create')).toEqual([])
+
+    api.onCreate = () => Promise.resolve(ok({
+      sessionId: sid('other'), agentPreset: 'other-specialist',
+    }))
+    await expect(workspaces.connectWorkspace(wid('alpha'), {
+      agentPreset: 'other-specialist',
+    })).resolves.toBe('other')
+    expect(api.callsOf('session.create')).toEqual([{
+      workspaceId: 'alpha', agentPreset: 'other-specialist',
+    }])
+  })
+
+  it('coalesces matching preset connects without joining incompatible preset requests', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onWorkspaceList = () => Promise.resolve(ok({ items: [workspace('alpha')] as never[] }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    const specialist = deferred<Awaited<ReturnType<FakeApiClient['onCreate']>>>()
+    const reviewer = deferred<Awaited<ReturnType<FakeApiClient['onCreate']>>>()
+    api.onCreate = (payload) => {
+      const { agentPreset } = payload as { agentPreset?: string }
+      return agentPreset === 'external-specialist' ? specialist.promise : reviewer.promise
+    }
+
+    const first = workspaces.connectWorkspace(wid('alpha'), { agentPreset: 'external-specialist' })
+    const duplicate = workspaces.connectWorkspace(wid('alpha'), { agentPreset: 'external-specialist' })
+    const incompatible = workspaces.connectWorkspace(wid('alpha'), { agentPreset: 'external-reviewer' })
+
+    expect(api.callsOf('session.create')).toEqual([
+      { workspaceId: 'alpha', agentPreset: 'external-specialist' },
+      { workspaceId: 'alpha', agentPreset: 'external-reviewer' },
+    ])
+    specialist.resolve(ok({ sessionId: sid('specialist'), agentPreset: 'external-specialist' }))
+    reviewer.resolve(ok({ sessionId: sid('reviewer'), agentPreset: 'external-reviewer' }))
+    await expect(Promise.all([first, duplicate, incompatible])).resolves.toEqual([
+      'specialist', 'specialist', 'reviewer',
+    ])
+  })
+
   it('returns created Workspaces and preserves Host business errors', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()
@@ -423,6 +489,12 @@ describe('WorkspaceRuntime', () => {
     workspaces.startSession(wid('recent-home'))
     await Promise.resolve()
     expect(connect).toHaveBeenLastCalledWith(wid('recent-home'))
+
+    workspaces.startSession(wid('recent-home'), { agentPreset: 'external-specialist' })
+    await Promise.resolve()
+    expect(connect).toHaveBeenLastCalledWith(
+      wid('recent-home'), { agentPreset: 'external-specialist' },
+    )
 
     workspaces.startSession()
     await Promise.resolve()

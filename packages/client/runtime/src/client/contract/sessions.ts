@@ -19,8 +19,10 @@ import type {
 } from '../sessions/service.ts'
 import type { SessionFace } from './session.ts'
 import type { ObservableSnapshot } from './store.ts'
+import type { SessionCreateOptions } from './sessions-port.ts'
 
 export type { AgentContext } from '../agents/scope.ts'
+export type { SessionCreateOptions } from './sessions-port.ts'
 
 /** The sessions-service face injected as `ctx.sessions`. */
 export interface ISessions {
@@ -62,6 +64,13 @@ export interface ISessions {
    * @returns completion of the current or newly started refresh.
    */
   refreshSubagents(parentSessionId: SessionId): Promise<void>
+
+  /**
+   * Create a Host-owned Session and wait for its requested preset to be ready.
+   * @param opts - target location, optional identity, and required initial preset.
+   * @returns the locally addressable Session id.
+   */
+  create(opts?: SessionCreateOptions): Promise<SessionId>
 
   /**
    * Record the composition one session now runs. The agent-preset seat calls

@@ -8,7 +8,6 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { BlueprintUiController } from './controller.ts'
@@ -145,7 +144,7 @@ function dshAgentCatalog(api: ConnectionHandle['api']): BlueprintAgentCatalog {
 /** Services required by the four Builder entries and the trial coordinator. */
 export const inject = [
   'slots', 'remote', 'remote.blueprint', 'connection', 'sessions', 'workspaces', 'layout', 'conversation',
-  'conversationEvents', 'agentPresetSessionIntent', 'locale',
+  'conversationEvents', 'locale',
 ]
 
 /** Build-owned state injected before booting the real Web shell in Blueprint Demo mode. */
@@ -170,22 +169,6 @@ function currentDemoBootstrap(): BlueprintDemoBootstrap | undefined {
   const query = new URLSearchParams(location.search)
   if (!query.has('fixture') || !query.has('blueprintDemo')) return undefined
   return (window as BlueprintDemoWindow).__DSH_BLUEPRINT_DEMO__
-}
-
-function waitForClientSessionAddressability(ctx: ClientContext, sessionId: SessionId): Promise<void> {
-  if (ctx.sessions.list.getSnapshot().byId[sessionId] !== undefined) return Promise.resolve()
-  return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      stop()
-      reject(new Error(`New Session ${sessionId} did not reach the client list`))
-    }, 5000)
-    const stop = ctx.sessions.list.subscribe(() => {
-      if (ctx.sessions.list.getSnapshot().byId[sessionId] === undefined) return
-      window.clearTimeout(timer)
-      stop()
-      resolve()
-    })
-  })
 }
 
 function trialWorkspace(ctx: ClientContext): WorkspaceId | undefined {
@@ -222,15 +205,11 @@ export async function capabilityAuthoringCreatorSessionId(
 
 async function createSessionForPreset(ctx: ClientContext, presetId: string, open = true, reservedId?: SessionId): Promise<SessionId> {
   const workspaceId = trialWorkspace(ctx)
-  const response = await (ctx.get('connection') as ConnectionHandle).api.sessions.create({
+  const sessionId = await ctx.sessions.create({
     ...(workspaceId === undefined ? {} : { workspaceId }),
     agentPreset: presetId,
     ...(reservedId === undefined ? {} : { sessionId: reservedId }),
   })
-  if (!response.result.ok) throw new Error(response.result.error.message)
-  const sessionId = response.result.value.sessionId
-  await waitForClientSessionAddressability(ctx, sessionId)
-  ctx.sessions.noteAgentPreset(sessionId, response.result.value.agentPreset ?? presetId)
   if (open) ctx.sessions.open(sessionId)
   return sessionId
 }
@@ -272,9 +251,12 @@ async function startCapabilityAuthoring(
         summary?.cwd,
         ctx.sessions.binding(sourceSessionId)?.session !== undefined,
         async (request) => {
-          const response = await (ctx.get('connection') as ConnectionHandle).api.sessions.create(request)
-          if (!response.result.ok) throw new Error(response.result.error.message)
-          return response.result.value
+          const sessionId = await ctx.sessions.create(request)
+          const agentPreset = ctx.sessions.list.getSnapshot().byId[sessionId]?.agentPreset
+          return {
+            sessionId,
+            ...(agentPreset === undefined ? {} : { agentPreset }),
+          }
         },
         (sessionId, agentPreset) => { ctx.sessions.noteAgentPreset(sessionId, agentPreset) },
       )
@@ -1016,14 +998,17 @@ export function apply(ctx: ClientContext): void {
       const originSessionId = ctx.sessions.list.getSnapshot().current
       return await prepareBlueprintTrialSession(request, {
         async create() {
-          const response = await api.sessions.create({
+          const sessionId = await ctx.sessions.create({
             ...(workspaceId === undefined ? {} : { workspaceId }),
             agentPreset: request.presetId,
           })
-          if (!response.result.ok) throw new Error(response.result.error.message)
-          return response.result.value
+          const agentPreset = ctx.sessions.list.getSnapshot().byId[sessionId]?.agentPreset
+          return {
+            sessionId,
+            ...(agentPreset === undefined ? {} : { agentPreset }),
+          }
         },
-        waitUntilAddressable: sessionId => waitForClientSessionAddressability(ctx, sessionId),
+        waitUntilAddressable: () => Promise.resolve(),
         notePreset: (sessionId, presetId) => { ctx.sessions.noteAgentPreset(sessionId, presetId) },
         async installContext(sessionId) {
           const result = await ctx.remote.blueprint.setConversationContext({
@@ -1322,7 +1307,7 @@ export function apply(ctx: ClientContext): void {
   const face = blueprintFace(controller, {
     selectPreset: async (presetId) => {
       if (presetId === 'cordis') {
-        ctx.agentPresetSessionIntent.stage('cordis', true)
+        ctx.workspaces.startSession(undefined, { agentPreset: 'cordis' })
         return
       }
       await controller.selectPreset(presetId)
@@ -1357,11 +1342,6 @@ export function apply(ctx: ClientContext): void {
     if (current === observedSession && runtimePreset === observedRuntimePreset) return
     observedSession = current
     observedRuntimePreset = runtimePreset
-    const pendingPreset = ctx.agentPresetSessionIntent.pending()
-    if (current !== undefined && pendingPreset !== undefined && runtimePreset !== pendingPreset) {
-      controller.awaitSessionPreset(current)
-      return
-    }
     if (current !== undefined && runtimePreset === 'cordis') markCapabilityContextRestore(current)
     void controller.activateSession(current, runtimePreset).then(async () => {
       const recovered = await recoverCapabilityAuthoring()
