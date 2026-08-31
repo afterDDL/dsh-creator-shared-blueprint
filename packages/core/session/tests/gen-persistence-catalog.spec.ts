@@ -22,9 +22,10 @@ function fixtureRoot(files: Record<string, string>): string {
   const completeFiles = { ...files }
   for (const rel of Object.keys(files)) {
     const match = /^(packages\/[^/]+\/[^/]+)\/src\//u.exec(rel)
-    if (match === null) continue
-    const manifest = `${match[1]}/package.json`
-    completeFiles[manifest] ??= `{ "name": "@fixture/${match[1].replace(/^packages\//u, '').replace(/\//gu, '-')}" }\n`
+    const packageRoot = match?.[1]
+    if (packageRoot === undefined) continue
+    const manifest = `${packageRoot}/package.json`
+    completeFiles[manifest] ??= `{ "name": "@fixture/${packageRoot.replace(/^packages\//u, '').replace(/\//gu, '-')}" }\n`
   }
   for (const [rel, source] of Object.entries(completeFiles)) {
     const abs = join(root, rel)
