@@ -17,6 +17,7 @@
 - `ctx.sessions.fork(source, boundary?, childSessionId?): Session`：解析实时会话对象或 id，选取截至 `boundary` 事件序号（含该事件）的种子（默认为当前最后一个事件），要求所选前缀结束时没有开放轮次，再创建带谱系元数据的实时子会话。
 - `ctx.sessions.get(id: SessionId): Session | undefined`
 - `ctx.sessions.list(): Session[]`
+- `ctx.sessions.eventTypes.register({ type, owner }): () => void` 在调用插件的生命周期内注册一个通过声明合并加入的必需持久事件类型。只有注册仍然有效时，持久化才接受该类型；第一方类型和重复注册都会被拒绝。
 
 #### 高级：有序清理生命周期原语
 
@@ -72,6 +73,8 @@
 
 `SessionEventMap` 可通过合并扩展：插件使用声明合并添加自身类型（压缩 seam 的 `compaction/*`、有界恢复的非 surface `llm/retry`、钩子桥接层的 `hook/*`）；合并成员会出现在同一目录中。插件拥有其合并事件的关系不变量，包括是否允许纯日志事件出现在轮次之间。需要持久性的生产方通过 `Session` 追加，再等待 `ctx.sessions.flush(session)`，无需虚构一个执行轮次。
 
+仓库外插件的必需事件不在生成的第一方词汇中时，插件须在应用期间、任何包含该事件的持久 Session 被 inspect、load 或 resume 之前，通过 `ctx.sessions.eventTypes` 注册。注册是运行时 authority，不是持久元数据：每次重启都须重新注册，dispose 会移除类型，插件缺失或不兼容时持久化会拒绝日志。插件的新版本只有在仍能解释该类型的持久 payload 语义时才能继续注册原类型；不兼容的 payload 修订使用新类型。
+
 此包还定义 `TurnEndReasonMap`，即用于轮次结束、可合并扩展且以 `kind` 为标签的和类型。`turn/start` 只携带轮次编号；随后已进入的 `user/message` 批次记录其输入，`llm/retry` 则记录请求恢复。
 
 被中断的实时轮次以 `{ kind: 'aborted', reason: AgentCancelCause }` 结束，在持久 transcript 中保留类型化取消原因。持久化会将受支持旧格式中的粗粒度中止结果导入为 `{ kind: 'aborted', reason: { kind: 'legacy' } }`，因为该记录没有保留调用方。轮次失败携带 `{ kind: 'error', error }`；只有崩溃恢复会合成 `{ kind: 'interrupted' }`。
@@ -89,6 +92,7 @@
 ### 扩展点
 
 - 持久化插件：订阅 `session/event`（延后写入），并在 `session/flush`（受等待）及 fiber dispose（资源释放）时排空。持久后端读取日志并重新加载到实时会话；这类后端会把元数据约定（`SessionHeader`、`session.header`）与日志一同存储。
+- 仓库外持久事件生产方：通过声明合并扩展 `SessionEventMap`，在插件应用期间经 `ctx.sessions.eventTypes` 注册每个必需类型，并让插件 fiber 持有返回的 disposer。持久化解码含该类型的日志前，注册必须已经存在。
 - 回放／fork：`create(id, { seed })` 校验并冻结连续的当前格式日志，再重建 surface；请求头必须包含提供方／模型，assistant 消息必须包含提供方／模型溯源信息。持久化层在构造该当前格式 seed 前负责读取兼容性处理。`fork(source, boundary?, childSessionId?)` 选择已完成轮次前缀并记录谱系。
 - 压缩：`dsh-compaction-basic` 为摘要检查点追加一个替换用 `user/message`，而 `dsh-compaction-tool-result-pruner` 追加仅修改内容的 `tool/result` 替换。工具配对边界策略及其缓存归 [`dsh-compaction` seam](../../compaction/compaction/README.md) 所有；此包拥有有序 surface 成员关系、替换校验与 `replaceGeneration`。
 

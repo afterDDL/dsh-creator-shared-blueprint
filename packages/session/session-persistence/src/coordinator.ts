@@ -9,7 +9,6 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   adoptSessionEvent,
   interruptedTurnClosers,
-  KNOWN_SESSION_EVENT_TYPES,
   SESSION_FORMAT_VERSION,
   SessionPreparation,
   snapshotJsonValue,
@@ -1060,8 +1059,8 @@ export class PersistenceCoordinator<TornMarker = unknown> {
    */
   private assertEventsSupported(meta: SessionHeader, events: readonly SessionEvent[]): void {
     for (const event of events) {
-      if (KNOWN_SESSION_EVENT_TYPES.has(event.type) || event.ignorable === true) continue
-      throw this.unsupported(meta, `session "${meta.id}" contains event type "${event.type}" (seq ${event.seq}) unknown to this harness and not marked ignorable; refusing to interpret the log — it was likely written by a newer harness`)
+      if (this.ctx.sessions.eventTypes.supports(event.type) || event.ignorable === true) continue
+      throw this.unsupported(meta, `session "${meta.id}" contains event type "${event.type}" (seq ${event.seq}) not recognized by this runtime and not marked ignorable; refusing to interpret the log — its plugin may be missing or the log may have been written by a newer harness`)
     }
   }
 

@@ -17,6 +17,7 @@ Creates and holds event-sourced `Session` instances. Persistence is intentionall
 - `ctx.sessions.fork(source, boundary?, childSessionId?): Session` — Resolve a live session object or id, select a seed through the inclusive `boundary` event seq (default: current last event), require that prefix to end outside an open turn, and create a live child session with lineage metadata.
 - `ctx.sessions.get(id: SessionId): Session | undefined`
 - `ctx.sessions.list(): Session[]`
+- `ctx.sessions.eventTypes.register({ type, owner }): () => void` registers one declaration-merged required durable event type for the calling plugin lifetime. Persistence accepts that type only while the registration is live; first-party and duplicate registrations reject.
 
 #### Advanced: ordered-teardown lifecycle primitives
 
@@ -72,6 +73,8 @@ The generated [persistence log event catalog](../../../docs/persistence-catalog.
 
 Merge-extensible via `SessionEventMap` — a plugin declaration-merges its own types (the compaction seam's `compaction/*`, bounded recovery's non-surface `llm/retry`, the hook bridges' `hook/*`); merged members appear in the same catalog. A plugin owns the relational invariant for its merged events, including whether a log-only event may appear between turns. A producer that requires durability appends through `Session` and then awaits `ctx.sessions.flush(session)` without fabricating an execution turn.
 
+An out-of-tree plugin whose required event is absent from the generated first-party vocabulary registers it through `ctx.sessions.eventTypes` during plugin application, before any persisted Session containing that event is inspected, loaded, or resumed. Registration is runtime authority rather than stored metadata: every restart registers again, disposal removes the type, and a missing or incompatible plugin makes persistence refuse the log. A plugin version may keep registering an existing type only while it still interprets that type's durable payload semantics; an incompatible payload revision uses a new type.
+
 Also defines `TurnEndReasonMap`, the merge-extensible `kind`-tagged sum type for turn endings. `turn/start` carries only the turn number; the following entered `user/message` batch records its input, while `llm/retry` records request recovery.
 
 An interrupted live turn ends with `{ kind: 'aborted', reason: AgentCancelCause }`, preserving the typed cancellation cause in the durable transcript. Persistence imports the coarse aborted outcome from the supported older format as `{ kind: 'aborted', reason: { kind: 'legacy' } }`, because that record did not retain its caller. A turn failure carries `{ kind: 'error', error }`; crash recovery alone synthesizes `{ kind: 'interrupted' }`.
@@ -89,6 +92,7 @@ Every `SessionEvent` carries three optional top-level fields (structural metadat
 ### Extension points
 
 - Persistence plugins: subscribe to `session/event` (write-behind) and drain on `session/flush` (awaited) and fiber dispose. A durable backend reads the log and reloads it into a live session; the metadata contract (`SessionHeader`, `session.header`) is what such a backend stores beside the log.
+- Out-of-tree durable-event producers: declaration-merge `SessionEventMap`, register each required type through `ctx.sessions.eventTypes` during plugin application, and let the plugin fiber own the returned disposer. The registration must exist before persistence decodes a log carrying that type.
 - Replay/fork: `create(id, { seed })` validates and freezes a contiguous current-format log and rebuilds its surface; request headers require provider/model, and assistant messages require provider/model provenance. Persistence owns read compatibility before constructing this current-format seed. `fork(source, boundary?, childSessionId?)` selects a completed-turn prefix and records lineage.
 - Compaction: `dsh-compaction-basic` appends a `user/message` replacement for summary checkpoints, while `dsh-compaction-tool-result-pruner` appends a content-only `tool/result` replacement. Tool-pairing boundary policy and its cache belong to the [`dsh-compaction` seam](../../compaction/compaction/README.md), while this package owns ordered surface membership, replacement validation, and `replaceGeneration`.
 

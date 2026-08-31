@@ -1092,6 +1092,39 @@ describe('Session', () => {
 
 
 describe('SessionStore', () => {
+  it('registers external required event types for one plugin lifetime', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const customType = 'dummy/core-contract' as SessionEventType
+
+    expect(ctx.sessions.eventTypes.supports(customType)).toBe(false)
+    const plugin = await ctx.plugin(Object.assign((pluginCtx: Context) => {
+      pluginCtx.effect(
+        () => pluginCtx.sessions.eventTypes.register({ type: customType, owner: 'dummy-core-contract' }),
+        'dummy core event vocabulary',
+      )
+    }, { inject: ['sessions'] }))
+    expect(ctx.sessions.eventTypes.supports(customType)).toBe(true)
+
+    await plugin.dispose()
+    expect(ctx.sessions.eventTypes.supports(customType)).toBe(false)
+  })
+
+  it('rejects first-party and live third-party event-type collisions', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const customType = 'dummy/collision' as SessionEventType
+    const dispose = ctx.sessions.eventTypes.register({ type: customType, owner: 'first-dummy' })
+
+    expect(() => ctx.sessions.eventTypes.register({ type: customType, owner: 'second-dummy' }))
+      .toThrow(/already registered by "first-dummy"/)
+    expect(() => ctx.sessions.eventTypes.register({ type: 'turn/start', owner: 'external-dummy' }))
+      .toThrow(/owned by this harness build/)
+
+    dispose()
+    expect(ctx.sessions.eventTypes.supports(customType)).toBe(false)
+  })
+
   it('creates sessions, emits session/created and session/event', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

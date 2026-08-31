@@ -19,6 +19,7 @@ import { snapshotJsonValue } from './json.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
+import { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 
 export * from './types.ts'
 export { SessionPreparation } from './preparation.ts'
@@ -760,6 +761,69 @@ export class Session {
 /** A fork source: either the live session object or its live store id. */
 export type SessionForkSource = Session | SessionId
 
+/** One third-party required session-event type and its diagnostic owner. */
+export interface SessionEventTypeRegistration {
+  /** Event type added to the durable vocabulary by declaration merging. */
+  readonly type: SessionEventType
+  /** Stable package or plugin name used in collision diagnostics. */
+  readonly owner: string
+}
+
+interface RegisteredSessionEventType {
+  readonly owner: string
+}
+
+/**
+ * Runtime vocabulary for required durable events supplied outside this build.
+ *
+ * A plugin registers during application, before any persisted session carrying
+ * its events is inspected, loaded, or resumed. Persistence consults this
+ * registry synchronously before constructing a Session, so an absent plugin
+ * still refuses the log instead of silently dropping required semantics.
+ */
+export class SessionEventTypeRegistry {
+  private readonly registrations = new Map<string, RegisteredSessionEventType>()
+
+  /**
+   * Register one required durable event type for this plugin lifetime.
+   * @param registration - merged event type and stable diagnostic owner.
+   * @returns an idempotent disposer removing this exact registration.
+   * @throws when either field is blank, the build already owns the type, or
+   *   another live plugin registration owns it.
+   */
+  register(registration: SessionEventTypeRegistration): () => void {
+    const { type, owner } = registration
+    if (type.trim() === '') throw new TypeError('session event type must not be blank')
+    if (owner.trim() === '') throw new TypeError('session event type owner must not be blank')
+    if (KNOWN_SESSION_EVENT_TYPES.has(type)) {
+      throw new Error(`session event type ${JSON.stringify(type)} is owned by this harness build`)
+    }
+    const existing = this.registrations.get(type)
+    if (existing !== undefined) {
+      throw new Error(
+        `session event type ${JSON.stringify(type)} is already registered by ${JSON.stringify(existing.owner)}`,
+      )
+    }
+    const entry = { owner }
+    this.registrations.set(type, entry)
+    let active = true
+    return () => {
+      if (!active) return
+      active = false
+      if (this.registrations.get(type) === entry) this.registrations.delete(type)
+    }
+  }
+
+  /**
+   * Test whether this runtime can interpret a required event type.
+   * @param type - durable event type read from storage.
+   * @returns true for first-party build vocabulary or a live registration.
+   */
+  supports(type: string): boolean {
+    return KNOWN_SESSION_EVENT_TYPES.has(type) || this.registrations.has(type)
+  }
+}
+
 /**
  * Rejection codes for session forking: the fork source id is unknown to the
  * live store (`SESSION_NOT_FOUND`) or names a session object that is not the
@@ -792,6 +856,9 @@ export class SessionForkError extends Error {
 export class SessionStore extends Service {
   private store = new Map<SessionId, SessionEntry>()
   private counter = 0
+
+  /** Required durable event types supplied by currently composed plugins. */
+  readonly eventTypes: SessionEventTypeRegistry = new SessionEventTypeRegistry()
 
   constructor(ctx: Context) {
     super(ctx, 'sessions')

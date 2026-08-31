@@ -16,6 +16,7 @@ import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import SessionStore, { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { meta, oneTurnLog, appendLog } from './contract.ts'
+import * as DummySessionEvents from './fixtures/dummy-session-events.ts'
 
 /**
  * The backend-specific capabilities the orchestration suite needs beyond the
@@ -216,11 +217,19 @@ async function liveSessionInFiber(
 export function runCoordinatorContract(name: string, makeFixture: () => Promise<CoordinatorFixture>): void {
   describe(`PersistenceCoordinator orchestration: ${name}`, () => {
     /** Mount SessionStore + a backend instance on a fresh context over the fixture's storage. */
-    async function freshCtx(fix: CoordinatorFixture): Promise<{ ctx: Context; fiber: Fiber }> {
+    async function freshCtx(
+      fix: CoordinatorFixture,
+      registerDummyEvents = false,
+    ): Promise<{ ctx: Context; fiber: Fiber; eventPlugin?: Fiber }> {
       const ctx = new Context()
       await ctx.plugin(SessionStore)
+      const eventPlugin = registerDummyEvents
+        ? await ctx.plugin(DummySessionEvents)
+        : undefined
       const fiber = await fix.mount(ctx)
-      return { ctx, fiber }
+      return eventPlugin === undefined
+        ? { ctx, fiber }
+        : { ctx, fiber, eventPlugin }
     }
 
     // --- write path: live session → flush → reload ---
@@ -1381,6 +1390,50 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
         expect(loaded.events.some(event => (event.type as string) === 'future/event')).toBe(true)
       } finally {
         await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('loads a required external event only while its plugin vocabulary is registered', async () => {
+      const fix = await makeFixture()
+      const writer = await freshCtx(fix, true)
+      try {
+        const m = meta('external-required', WORK)
+        await writer.ctx.sessionPersistence.create(m)
+        await writer.ctx.sessionPersistence.append(m.id, [
+          ...oneTurnLog(),
+          {
+            type: DummySessionEvents.DUMMY_SESSION_EVENT_TYPE,
+            seq: oneTurnLog().length,
+            time: 99,
+            data: { label: 'persisted by an external plugin' },
+          },
+        ])
+      } finally {
+        await writer.fiber.dispose()
+        await writer.eventPlugin?.dispose()
+      }
+
+      const missingPlugin = await freshCtx(fix)
+      try {
+        const failure = await missingPlugin.ctx.sessionPersistence.load(SessionId('external-required'))
+          .then(() => undefined, (error: unknown) => error as Error)
+        expect(failure?.name).toBe('SessionFormatUnsupportedError')
+        expect(failure?.message).toMatch(/event type "dummy\/checkpoint".*not marked ignorable/)
+      } finally {
+        await missingPlugin.fiber.dispose()
+      }
+
+      const restarted = await freshCtx(fix, true)
+      try {
+        const loaded = await restarted.ctx.sessionPersistence.load(SessionId('external-required'))
+        expect(loaded.events.at(-1)).toMatchObject({
+          type: DummySessionEvents.DUMMY_SESSION_EVENT_TYPE,
+          data: { label: 'persisted by an external plugin' },
+        })
+      } finally {
+        await restarted.fiber.dispose()
+        await restarted.eventPlugin?.dispose()
         await fix.cleanup()
       }
     })

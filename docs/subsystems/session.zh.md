@@ -10,6 +10,8 @@
 
 仅追加的事件类型。可通过声明合并扩展：插件通过 declaration merging 声明额外的事件类型。例如[压缩（compaction） seam](compaction.md) 添加了 `compaction/start` / `compaction/summary` / `compaction/end`，`@deepseek-ai/dsh-hook-protocol` 为钩子桥接添加了仅记录日志的 `hook/invoked` / `hook/result` 记录。与 `compaction/*` 一样，这些都不是 `SurfaceEventType`（没有 `surfaceOp`）。生成的[持久化日志事件目录](../persistence-catalog.md)列举了所有成员（核心与合并扩展的），包含其 payload、surface 标记与声明位置。
 
+仓库内声明会进入生成的第一方词汇。仓库外插件须在插件应用期间、持久化解码含该事件的 Session 之前，通过 `ctx.sessions.eventTypes.register({ type, owner })` 注册每个必需的合并类型。注册跟随插件 fiber：移除或重启会使注册消失，直到插件再次注册；注册缺失时，必需事件仍保持快速失败。若插件版本无法兼容原 payload，必须使用新的事件类型，而不能重新注册旧类型来声称兼容。
+
 ```ts type-equiv
 /** A user-role specialization of the one shared message representation. */
 interface UserMessage extends Message {
