@@ -221,13 +221,9 @@
   max-width: 0;
 }
 
-.agentArea {
+.navigationSections {
   flex: none;
   min-width: 0;
-}
-
-.collapsed .agentArea {
-  display: none;
 }
 
 /* Region seat: always mounted so the foot never moves. Its trailing margin

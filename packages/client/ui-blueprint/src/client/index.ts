@@ -720,8 +720,10 @@ function registerBlueprintSlots(ctx: ClientContext, face: BlueprintInjected): vo
   registerBlueprintCapabilityRouteTurnPresentation(ctx)
   registerBlueprintRouteToolViews(ctx)
 
-  ctx.slots.inject('sidebar.agents', () => ctx.slots.register({
-    name: 'sidebar.agents',
+  ctx.slots.inject('sidebar.navigation.section', () => ctx.slots.register({
+    name: 'sidebar.navigation.section',
+    id: 'blueprint-agents',
+    order: 0,
     inject: (): BlueprintInjected => face,
   }, BlueprintAgentRoster))
 

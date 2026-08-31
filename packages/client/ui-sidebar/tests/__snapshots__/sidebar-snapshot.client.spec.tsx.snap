@@ -52,10 +52,10 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
       />
     </button>
     <div
-      class="agentArea"
+      class="navigationSections"
     >
       <div
-        data-slot="sidebar.agents"
+        data-slot="sidebar.navigation.section"
         style="display: contents;"
       />
     </div>
@@ -153,10 +153,10 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       </span>
     </button>
     <div
-      class="agentArea"
+      class="navigationSections"
     >
       <div
-        data-slot="sidebar.agents"
+        data-slot="sidebar.navigation.section"
         style="display: contents;"
       />
     </div>
@@ -254,10 +254,10 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       </span>
     </button>
     <div
-      class="agentArea"
+      class="navigationSections"
     >
       <div
-        data-slot="sidebar.agents"
+        data-slot="sidebar.navigation.section"
         style="display: contents;"
       />
     </div>

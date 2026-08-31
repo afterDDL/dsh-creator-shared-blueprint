@@ -5,7 +5,8 @@
  * everything between the section header and the list bottom is the
  * `sidebar.workspaces` registrant's (ui-workspace), and the foot is the
  * `sidebar.settings` registrant's (ui-settings), followed by optional footer
- * actions in `sidebar.footer.action`.
+ * actions in `sidebar.footer.action`. Optional navigation sections register
+ * above the workspace browser through `sidebar.navigation.section`.
  */
 import type { PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls ui-layout's SlotMap merge (the 'sidebar' entry) into every
@@ -15,8 +16,8 @@ import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
-    /** Optional Agent roster shown above the workspace/session browser. */
-    'sidebar.agents': { kind: 'single'; scope: 'root'; owner: SidebarAgentsOwnerProps }
+    /** Additive navigation sections shown above the workspace/session browser. */
+    'sidebar.navigation.section': { kind: 'list'; scope: 'root'; owner: SidebarNavigationSectionOwnerProps }
     /**
      * The workspace/session browsing region: section header, search, the
      * grouped/flat session list, and every workspace dialog. Declared by this
@@ -49,11 +50,16 @@ export interface SidebarSectionOwnerProps {
   expandSidebar: () => void
 }
 
-/** Owner share of the optional Agent roster. */
-export interface SidebarAgentsOwnerProps {
-  /** The roster is hidden rather than compressed when the sidebar is a rail. */
+/** Owner share of an additive navigation section above the workspace browser. */
+export interface SidebarNavigationSectionOwnerProps {
+  /** Whether the sidebar currently presents wide content instead of the rail. */
   wide: boolean
+  /** Request expansion while already collapsed; a wide sidebar leaves this as a no-op. */
+  expandSidebar: () => void
 }
+
+/** Standard root-scoped props received by an additive sidebar navigation section. */
+export type SidebarNavigationSectionProps = PropsRuntime<'sidebar.navigation.section'>
 
 /**
  * Owner share of the sidebar settings seat: the column display state the
@@ -93,5 +99,5 @@ export type SidebarRootInjected = {
  */
 export type SidebarRootComponentProps =
   PropsRuntime<'sidebar'>
-  & PropsRenderSlots<'sidebar.agents' | 'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'>
+  & PropsRenderSlots<'sidebar.navigation.section' | 'sidebar.workspaces' | 'sidebar.settings' | 'sidebar.footer.action'>
   & SidebarRootInjected & PropsLocale<'sidebar'>

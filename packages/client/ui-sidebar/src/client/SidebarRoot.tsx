@@ -169,8 +169,11 @@ export function SidebarRoot({
         </button>
       </Tooltip>
 
-      <div className={css.agentArea}>
-        {renderSlot('sidebar.agents', { wide })}
+      <div className={css.navigationSections}>
+        {renderSlot('sidebar.navigation.section', {
+          wide,
+          expandSidebar: () => { if (collapsed) toggleSidebar() },
+        })}
       </div>
 
       {/* The browsing region fills the column between the controls and the

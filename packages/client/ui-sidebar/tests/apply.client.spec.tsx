@@ -35,6 +35,7 @@ describe('ui-sidebar apply', () => {
     const b = await bench()
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     expect(b.slots.entries('sidebar')).toHaveLength(1)
+    expect(b.slots.spec('sidebar.navigation.section')).toEqual({ kind: 'list', scope: 'root' })
     expect(b.slots.spec('sidebar.workspaces')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('sidebar.settings')).toEqual({ kind: 'single', scope: 'root' })
     expect(b.slots.spec('sidebar.footer.action')).toEqual({ kind: 'list', scope: 'root' })
@@ -62,7 +63,36 @@ describe('ui-sidebar apply', () => {
     await fiber.await()
     await fiber.dispose()
     expect(b.slots.entries('sidebar')).toHaveLength(0)
+    expect(b.slots.spec('sidebar.navigation.section')).toBeUndefined()
     expect(b.slots.spec('sidebar.workspaces')).toBeUndefined()
     expect(b.slots.spec('sidebar.footer.action')).toBeUndefined()
+  })
+
+  it('admits ordered non-Blueprint navigation sections registered before the shell', async () => {
+    const b = await bench()
+    const external = b.ctx.plugin({
+      name: 'external-navigation-sections',
+      inject: ['slots'],
+      apply(ctx) {
+        ctx.slots.inject('sidebar.navigation.section', () => [
+          ctx.slots.register(
+            { name: 'sidebar.navigation.section', id: 'project-index', order: 20 },
+            () => null,
+          ),
+          ctx.slots.register(
+            { name: 'sidebar.navigation.section', id: 'runtime-monitor', order: 10 },
+            () => null,
+          ),
+        ])
+      },
+    })
+    await external.await()
+    expect(b.slots.entries('sidebar.navigation.section')).toHaveLength(0)
+
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    expect(b.slots.entries('sidebar.navigation.section').map(entry => entry.options.id))
+      .toEqual(['runtime-monitor', 'project-index'])
+    await external.dispose()
+    expect(b.slots.entries('sidebar.navigation.section')).toHaveLength(0)
   })
 })
