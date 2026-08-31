@@ -101,8 +101,11 @@ export function webSnapshotMode(): WebSnapshotMode {
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const WEB_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/web-app/cordis.patch.yml')
 const SHARED_BLUEPRINT_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/shared-blueprint/cordis.patch.yml')
-/** The installation anchor whose dependency surface the profile module fallback mirrors. */
-const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
+/** Installation anchors whose dependency surfaces the profile module fallback mirrors. */
+const INSTALL_ANCHORS = [
+  join(REPO_ROOT, 'apps/cli/package.json'),
+  join(REPO_ROOT, 'packages/bundle/shared-blueprint/package.json'),
+] as const
 /** The deployment's own agent-preset root, shipped beside the app's config. */
 const SHIPPED_PRESET_DIR = join(REPO_ROOT, 'apps/cli/config/agent-presets')
 
@@ -512,7 +515,9 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // The production module-resolution setup: an empty profile root inside the temp
     // harness home, with bare plugin names resolving through the flat module
     // fallback the launcher heals under <home>/profiles.
-    healProfilesModuleFallback(INSTALL_ANCHOR, harnessHome)
+    for (const installAnchor of INSTALL_ANCHORS) {
+      healProfilesModuleFallback(installAnchor, harnessHome)
+    }
     const profileDir = join(harnessHome, 'profiles', 'scaffold')
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
