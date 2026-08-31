@@ -735,6 +735,9 @@ export type DetailsSlotProps = PropsRuntime<'details'>
   & PropsRenderSlots<'conversation.details.tool' | 'conversation.details.default'>
   & PropsStore<ChatStore> & DetailsInjected & PropsLocale<'conversation'>
 
+/** Standard session-scoped props received by a plugin occupying the default details surface. */
+export type ConversationDefaultDetailsProps = PropsRuntime<'conversation.details.default'>
+
 /** Owner share common to the hero / New-Session Workspace pickers. */
 export interface EmptyWorkspaceOwnerProps {
   open: boolean

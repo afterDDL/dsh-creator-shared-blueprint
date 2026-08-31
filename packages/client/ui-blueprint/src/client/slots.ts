@@ -3,7 +3,7 @@ import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { BlueprintChangeSet } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ConversationDefaultDetailsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { BlueprintModal, BlueprintUiState } from './controller.ts'
@@ -38,7 +38,7 @@ type Face = InjectFace<BlueprintInjected>
 /** Props for the Sidebar Agent roster. */
 export type BlueprintAgentRosterProps = PropsRuntime<'sidebar.agents'> & Face
 /** Props for the default right-column Blueprint panel. */
-export type BlueprintPanelProps = PropsRuntime<'conversation.details.default'> & Face
+export type BlueprintPanelProps = ConversationDefaultDetailsProps & Face
 /** Props for the selected-context conversation dock entry. */
 export type BlueprintSelectedContextProps = PropsRuntime<'conversation.input.dock'> & Face
 /** Props for the frame-wide Builder modal entry. */
