@@ -96,7 +96,13 @@ async function call(
   args: unknown,
   agent?: NonNullable<ToolExecutionInput['agent']>,
 ) {
-  return await ctx.tools.execute({ signal, callId: CallId(`call-${name}`), name, arguments: args, agent })
+  return await ctx.tools.execute({
+    signal,
+    callId: CallId(`call-${name}`),
+    name,
+    arguments: args,
+    ...(agent === undefined ? {} : { agent }),
+  })
 }
 
 describe('Creator preset authoring tools', () => {

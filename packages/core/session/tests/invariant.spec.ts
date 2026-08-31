@@ -278,7 +278,7 @@ describe('session-log invariants', () => {
           ...original.data.message.content[0],
           content: [{ type: 'text', text: 'pruned' }],
         }],
-      }),
+      } satisfies typeof original.data.message),
     }, {
       surfaceOp: { op: 'replace', start: original.seq, end: original.seq },
       sourceEventSeqs: [original.seq],
@@ -317,7 +317,7 @@ describe('session-log invariants', () => {
           ...original.data.message.content[0],
           content: [{ type: 'text', text: 'pruned' }],
         }],
-      }),
+      } satisfies typeof original.data.message),
     }, {
       surfaceOp: { op: 'replace', start: original.seq, end: original.seq },
       sourceEventSeqs: [original.seq],

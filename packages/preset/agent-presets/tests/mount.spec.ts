@@ -739,13 +739,21 @@ describe('editing a composition file', () => {
       scoped.agentPresets.copy('publication-guarded', 'publication-copy'),
     ] as const
     const settled = operations.map(() => false)
-    const tracked = operations.map(async (operation, index) => {
+    const track = async <T>(operation: Promise<T>, index: number): Promise<T> => {
       try {
         return await operation
       } finally {
         settled[index] = true
       }
-    })
+    }
+    const tracked = [
+      track(operations[0], 0),
+      track(operations[1], 1),
+      track(operations[2], 2),
+      track(operations[3], 3),
+      track(operations[4], 4),
+      track(operations[5], 5),
+    ] as const
     await Promise.resolve()
 
     expect(settled).toEqual([false, false, false, false, false, false])

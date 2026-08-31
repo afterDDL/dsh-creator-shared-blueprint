@@ -43,7 +43,11 @@ async function startFixture(flush: () => Promise<void>, appendFails = false): Pr
   const preset: AgentPreset = { id: 'laptop-research', trust: 'user', path, name: 'Laptop research' }
   const blueprint: Blueprint = {
     schemaVersion: 1,
-    preset: { id: preset.id, trust: preset.trust, name: preset.name },
+    preset: {
+      id: preset.id,
+      trust: preset.trust,
+      ...(preset.name === undefined ? {} : { name: preset.name }),
+    },
     revision,
     nodes: [],
     runtime: { tools: [], promptSections: [], skills: [], delegations: [], permissions: null },

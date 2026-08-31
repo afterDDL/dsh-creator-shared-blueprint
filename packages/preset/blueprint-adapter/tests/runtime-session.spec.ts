@@ -2332,7 +2332,7 @@ ${scenario === 'multiple' ? `- id: policy-research
         restoreFirstFollowup?.()
         restoreSecondFollowup?.()
         await second?.fiber.dispose()
-        if (first.fiber.isActive) await first.fiber.dispose()
+        if (first.fiber.uid !== null) await first.fiber.dispose()
         await rm(root, { recursive: true, force: true })
         await rm(persistenceRoot, { recursive: true, force: true })
       }
@@ -2434,7 +2434,7 @@ ${scenario === 'multiple' ? `- id: policy-research
       restoreFirstFollowup?.()
       restoreSecondFollowup?.()
       await second?.fiber.dispose()
-      if (first.fiber.isActive) await first.fiber.dispose()
+      if (first.fiber.uid !== null) await first.fiber.dispose()
       await rm(root, { recursive: true, force: true })
       await rm(persistenceRoot, { recursive: true, force: true })
     }
@@ -2652,7 +2652,7 @@ ${scenario === 'multiple' ? `- id: policy-research
       restoreFirstFollowup?.()
       restoreSecondFollowup?.()
       await second?.fiber.dispose()
-      if (first.fiber.isActive) await first.fiber.dispose()
+      if (first.fiber.uid !== null) await first.fiber.dispose()
       await rm(root, { recursive: true, force: true })
       await rm(persistenceRoot, { recursive: true, force: true })
     }

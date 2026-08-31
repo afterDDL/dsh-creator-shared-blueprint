@@ -63,6 +63,8 @@ type CapabilityStart = {
   data: Extract<BlueprintCapabilityAuthoringEvent, { state: 'started' }>
 }
 
+type CapabilityAuthoringEvent = Extract<SessionEvent, { type: 'blueprint/capability-authoring' }>
+
 function capabilityWakeMessageId(start: CapabilityStart): MessageId {
   return MessageId(`blueprint-capability:${createHash('sha256')
     .update(JSON.stringify([start.data.sourceSessionId, start.data.routeId, start.seq])).digest('hex')}`)
@@ -90,10 +92,12 @@ function claimCapabilityTurn(session: Session, turn: number): void {
 
 function settleInitialCapabilityTurn(
   session: Session,
-  start: CapabilityStart,
+  event: CapabilityAuthoringEvent,
   turn: number,
   reason: Extract<SessionEvent, { type: 'turn/end' }>['data']['reason'],
 ) {
+  if (event.data.state !== 'started') throw new Error('Expected capability authoring start')
+  const start: CapabilityStart = { seq: event.seq, data: event.data }
   enqueueLegacyCapabilityWake(session, start)
   claimCapabilityTurn(session, turn)
   return session.append('turn/end', { turn, reason })
