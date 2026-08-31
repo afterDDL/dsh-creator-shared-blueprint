@@ -176,7 +176,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     this.hasMore = hasMore
     const sorted = [...entries].sort((left, right) => left.event.seq - right.event.seq)
     for (const entry of sorted) this.inputs.set(entry.event.seq, entry)
-    this.locationIndex.rebuild(sorted, hasMore)
+    this.locationIndex.rebuild(sorted, hasMore, this.locationReferences(sorted))
     this.timelineDirty = true
     for (const entry of sorted) this.matchInput(entry)
     this.replayDependencies()
@@ -206,7 +206,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
       this.replayContexts(this.refreshMatchLocations(changed))
       if (changed.size > 0) publication = 'immediate'
     } else {
-      this.locationIndex.appendNonBoundary(input.event)
+      this.locationIndex.appendNonBoundary(input.event, this.locationReference(input.event))
     }
     publication = maximumPublication(publication, this.matchInput(input))
     if (this.replayRevisedDependents()) publication = 'immediate'
@@ -230,7 +230,8 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     for (const entry of fresh) this.inputs.set(entry.event.seq, entry)
     this.hasMore = hasMore
     const previousTimeline = this.locationIndex.snapshot()
-    const changedLocations = this.locationIndex.rebuild(this.sortedInputs(), hasMore)
+    const sorted = this.sortedInputs()
+    const changedLocations = this.locationIndex.rebuild(sorted, hasMore, this.locationReferences(sorted))
     if (this.locationIndex.snapshot() !== previousTimeline) this.timelineDirty = true
     const affected = this.refreshMatchLocations(changedLocations)
     const pending = new Map<string, PendingMatch[]>()
@@ -332,6 +333,39 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
 
   private sortedInputs(): ConversationEventInput[] {
     return [...this.inputs.values()].sort((left, right) => left.event.seq - right.event.seq)
+  }
+
+  private locationReferences(entries: readonly ConversationEventInput[]): ReadonlyMap<number, number> {
+    const references = new Map<number, number>()
+    for (const { event } of entries) {
+      const reference = this.locationReference(event)
+      if (reference !== undefined) references.set(event.seq, reference)
+    }
+    return references
+  }
+
+  private locationReference(event: ConversationEventInput['event']): number | undefined {
+    let claimed: { readonly kind: string; readonly seq: number } | undefined
+    const fallback = this.eventDefinitions.fallbackEntry()
+    const definitions = fallback === undefined
+      ? this.eventDefinitions.entries()
+      : [...this.eventDefinitions.entries(), fallback]
+    for (const definition of definitions) {
+      const reference = definition.locationReference?.(event)
+      if (reference === null || reference === undefined) continue
+      if (!Number.isSafeInteger(reference.seq) || reference.seq < 0 || reference.seq >= event.seq) {
+        throw new Error(
+          `conversation Definition "${definition.kind}" returned invalid Location reference ${reference.seq}`,
+        )
+      }
+      if (claimed !== undefined) {
+        throw new Error(
+          `conversation Event ${event.seq} Location is already referenced by Definition "${claimed.kind}"`,
+        )
+      }
+      claimed = { kind: definition.kind, seq: reference.seq }
+    }
+    return claimed?.seq
   }
 
   private matchInput(input: ConversationEventInput): ConversationPublication {

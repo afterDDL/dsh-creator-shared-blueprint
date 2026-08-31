@@ -28,7 +28,7 @@ export type {
   ChatConversationViewNode, ConversationContextReader, ConversationEventInput,
   ConversationLocationData, ConversationLocationDataScope, ConversationLocationDataStore,
   ConversationStepDataMap,
-  ConversationLocation, ConversationMatch, ConversationMatchResult,
+  ConversationLocation, ConversationLocationReference, ConversationMatch, ConversationMatchResult,
   ConversationNodeContext, ConversationNodeDefinition, ConversationPreviousContext,
   ConversationPublication, ConversationTimelineSnapshot, ConversationTurnDataMap, ConversationViewBuilder,
   ConversationViewDefinition, ConversationViewNode, ConversationViewSnapshotMap,

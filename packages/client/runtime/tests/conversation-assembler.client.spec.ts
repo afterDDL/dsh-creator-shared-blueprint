@@ -826,6 +826,129 @@ describe('ConversationNodeAssembler', () => {
       .toEqual(['2:3', '2:3'])
   })
 
+  it('lets an external Definition retain source Location through append and registry rebuild', () => {
+    const definition: ConversationNodeDefinition<null> = {
+      kind: 'external-review-projection',
+      match: event => (event.type as string) === 'review/projection'
+        ? { id: String(event.seq), role: 'start' }
+        : null,
+      locationReference: (event) => {
+        if ((event.type as string) !== 'review/projection') return null
+        return { seq: (event.data as unknown as { sourceSeq: number }).sourceSeq }
+      },
+      start: () => null,
+      update: context => context.state,
+      target: 'chat',
+      buildViewNode: (context) => {
+        const location = context.start?.location
+        return node(context, location?.kind === 'step'
+          ? `${location.turn.turn}:${location.step.step}`
+          : location?.kind)
+      },
+    }
+    const assembler = new ConversationNodeAssembler(
+      new TestEventDefinitions([definition]),
+      new TestViewDefinitions([testView()]),
+    )
+    const initial = [
+      input(at(1, 'turn/start', { turn: 1 })),
+      input(at(2, 'step/start', { turn: 1, step: 1 })),
+      input(at(3, 'tool/call', { turn: 1, step: 1, callId: 'review', name: 'review', arguments: '{}' })),
+      input(at(4, 'step/end', { turn: 1, step: 1 })),
+      input(at(5, 'turn/end', { turn: 1, reason: { kind: 'completed' } })),
+      input(at(6, 'review/projection', { sourceSeq: 3 })),
+    ]
+    assembler.replaceWindow(initial, false)
+    assembler.flush()
+
+    const appended = input(at(7, 'review/projection', { sourceSeq: 3 }))
+    assembler.append(appended)
+    assembler.flush()
+    expect([...chatSnapshot(assembler)?.nodes.values() ?? []].map(value => value.data))
+      .toEqual(['1:1', '1:1'])
+
+    assembler.rebuildRegistry()
+    assembler.flush()
+    expect([...chatSnapshot(assembler)?.nodes.values() ?? []].map(value => value.data))
+      .toEqual(['1:1', '1:1'])
+
+    assembler.replaceWindow([...initial, appended], false)
+    assembler.flush()
+    expect([...chatSnapshot(assembler)?.nodes.values() ?? []].map(value => value.data))
+      .toEqual(['1:1', '1:1'])
+  })
+
+  it('repairs a projection Location when prepend loads its referenced source event', () => {
+    const definition: ConversationNodeDefinition<null> = {
+      kind: 'external-review-projection',
+      match: event => (event.type as string) === 'review/projection'
+        ? { id: String(event.seq), role: 'start' }
+        : null,
+      locationReference: event => (event.type as string) === 'review/projection'
+        ? { seq: (event.data as unknown as { sourceSeq: number }).sourceSeq }
+        : null,
+      start: () => null,
+      update: context => context.state,
+      target: 'chat',
+      buildViewNode: context => node(context, context.start?.location.kind),
+    }
+    const assembler = new ConversationNodeAssembler(
+      new TestEventDefinitions([definition]),
+      new TestViewDefinitions([testView()]),
+    )
+    assembler.replaceWindow([
+      input(at(6, 'review/projection', { sourceSeq: 3 })),
+      input(at(7, 'turn/start', { turn: 2 })),
+    ], true)
+    assembler.flush()
+    expect([...chatSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toBe('session')
+
+    assembler.prepend([
+      input(at(1, 'turn/start', { turn: 1 })),
+      input(at(2, 'step/start', { turn: 1, step: 1 })),
+      input(at(3, 'tool/call', { turn: 1, step: 1, callId: 'review', name: 'review', arguments: '{}' })),
+      input(at(4, 'step/end', { turn: 1, step: 1 })),
+      input(at(5, 'turn/end', { turn: 1, reason: { kind: 'completed' } })),
+    ], false)
+    assembler.flush()
+    expect([...chatSnapshot(assembler)?.nodes.values() ?? []][0]?.data).toBe('step')
+  })
+
+  it('rejects conflicting or non-prior projection Location references', () => {
+    const definition = (
+      kind: string,
+      sourceSeq: (event: SessionEvent) => number,
+    ): ConversationNodeDefinition<null> => ({
+      kind,
+      match: event => (event.type as string) === 'review/projection'
+        ? { id: String(event.seq), role: 'start' }
+        : null,
+      locationReference: event => (event.type as string) === 'review/projection'
+        ? { seq: sourceSeq(event) }
+        : null,
+      start: () => null,
+      update: context => context.state,
+    })
+    const projected = input(at(2, 'review/projection', { sourceSeq: 1 }))
+
+    expect(() => new ConversationNodeAssembler(
+      new TestEventDefinitions([
+        definition('external-review-a', () => 1),
+        definition('external-review-b', () => 1),
+      ]),
+      new TestViewDefinitions([]),
+    ).replaceWindow([projected], false)).toThrow(
+      'conversation Event 2 Location is already referenced by Definition "external-review-a"',
+    )
+
+    expect(() => new ConversationNodeAssembler(
+      new TestEventDefinitions([definition('external-review-future', event => event.seq)]),
+      new TestViewDefinitions([]),
+    ).replaceWindow([projected], false)).toThrow(
+      'conversation Definition "external-review-future" returned invalid Location reference 2',
+    )
+  })
+
   it('backfills a truncated page prefix from the first surviving Turn coordinates', () => {
     const definition: ConversationNodeDefinition<null> = {
       kind: 'location-prefix-probe',

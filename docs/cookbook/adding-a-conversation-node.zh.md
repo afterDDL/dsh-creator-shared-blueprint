@@ -195,6 +195,8 @@ export function apply(ctx: ClientContext): void {
 
 `match(event)` 是身份提取器，不是 fold：它只能收到当前事件，并返回 Definition 内部 id 与生命周期角色。命中后，Assembler 通过 `(kind, id)` 定位 Context，再调用一次 `start`，或把当前 State 交给 `update`。两个函数都必须返回引擎随后采用的 State；推荐返回新的 immutable value，但函数原地修改后返回同一对象时，采用语义也相同。
 
+`locationReference(event)` 是可选的当前事件 projection hook，适用于 Turn/Step 归属应沿用更早持久事件的持久 projection 事件。只为 Definition 自己拥有的 projection 事件返回 `{ seq }`，且 `seq` 必须更小。Assembler 会拒绝多个 Definition 同时声明同一事件。引用事件已加载时，replace、append、registry rebuild 与 refresh 会解析为同一 Location；若引用位于截断窗口之前，后续 prepend 会修正 Location 并重放受影响 Context。不要用该 hook 修改 Runtime 内部 Location map，也不要从已渲染 Node 推断身份。
+
 `buildLocationData(context, scope)` 可以把 Definition 拥有的数据发布到引擎拥有的 Turn 或 Step 上。通过 declaration merging 为每个 key 指定精确 value 类型。同一 Location 内的另一个 Node 可以使用受限 slot hook（例如 `useTurnData(key)`）读取该值，无须取得 Session，也无须扫描 `snapshot.chat.nodes`。
 
 `target` 与 `buildViewNode(context)` 必须同时声明一项由 target 拥有的渲染贡献。把 `context.key` 保留为 React 侧身份，根据持久排序证据选择 `anchorSeq`，并且只返回 renderer 可以直接使用的数据。某个 target Node 一旦发布，就要继续返回同一个 key；需要暂时离开可见流时使用 `visibility: 'hidden'`，不要改为返回 `null` 撤回它。
@@ -213,9 +215,9 @@ Assembler 会记录这项依赖。如果后续 older prepend 带来了更近的�
 |---|---|---|
 | open、resync 或 gap repair 时 replace | 重建已加载窗口，每条事件对每个 Definition 匹配一次，再回放每个已有 start 的 Context | 先执行 `start`，再按 `seq` 升序执行其 update；只有 update 的 pending Context 仍没有 State |
 | prepend 一页更早历史 | 只匹配新增的更早事件，按 `(kind, id)` 合并进 Context，保留现有 keyed node，并只重放受影响的 Context 与依赖 | 新发现的 start 会激活已收集 update；Location 或前序依赖变化也可能重跑 Context |
-| append 一条实时事件 | 每个 Definition 各调用一次 `match`，按 key 查找命中的 Context，只更新该 Context | 对 start 之后的匹配事件执行一次 `update` 并请求一次发布；不扫描已有 Context |
+| append 一条实时事件 | 计算每个 Definition 对当前事件的 match 与可选 Location reference，按 key 查找命中的 Context，只更新该 Context | 对 start 之后的匹配事件执行一次 `update` 并请求一次发布；不扫描已有 Context |
 
-注册 `D` 个 Definition 时，一条新事件会进行 `D` 次仅当前事件匹配；命中后的 Context key 查询是常数时间。Definition 代码必须维持这个性质：正常 append 热路径不得遍历完整事件窗口、所有 Context、`context.matches` 或已渲染 Node 集合。累计事实放进 State，同 Turn/Step 共享信息放进 Location data，有索引的前序依赖使用 `reader.previous()`。
+注册 `D` 个 Definition 时，一条新事件会进行 `D` 次仅当前事件匹配、检查可选的当前事件 Location hook；命中后的 Context key 查询是常数时间。Definition 代码必须维持这个性质：正常 append 热路径不得遍历完整事件窗口、所有 Context、`context.matches` 或已渲染 Node 集合。累计事实放进 State，同 Turn/Step 共享信息放进 Location data，有索引的前序依赖使用 `reader.previous()`。
 
 `publication` 控制发生 State 变更后何时物化。结构或 terminal 变化使用 `immediate`，高频可见 delta 使用 `animation-frame`，只为后续发布积累 State 时使用 `none`。引擎仍会按日志顺序应用每条 update；该选项只合并视图发布频率。
 

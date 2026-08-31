@@ -1,5 +1,4 @@
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import { isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type {
   ConversationEventInput, ConversationLocation, ConversationLocationData,
   ConversationLocationDataStore, ConversationStepDataMap, ConversationTimelineSnapshot,
@@ -95,15 +94,11 @@ function payloadCoordinates(event: SessionEvent): Coordinates {
   return { ...turn === undefined ? {} : { turn }, ...step === undefined ? {} : { step } }
 }
 
-function internalReplacementCoordinates(
-  event: SessionEvent,
+function referencedCoordinates(
+  sourceSeq: number | undefined,
   coordinates: ReadonlyMap<number, Coordinates>,
 ): Coordinates | undefined {
-  if (event.type !== 'user/message' || !isReplacementSurfaceEvent(event)) return undefined
-  const source = event.data.source as unknown as { readonly presentation?: unknown }
-  if (source.presentation !== 'internal') return undefined
-  const replaced = coordinates.get(event.surfaceOp.end)
-  return replaced?.turn === undefined ? undefined : replaced
+  return sourceSeq === undefined ? undefined : coordinates.get(sourceSeq)
 }
 
 function truncatedPrefixCoordinates(entries: readonly ConversationEventInput[]): Coordinates {
@@ -229,9 +224,14 @@ export class ConversationLocationIndex {
    * Rebuild timeline facts after replace/prepend or a boundary append.
    * @param entries - complete current window in ascending seq order.
    * @param hasMore - whether the window begins after older durable events.
+   * @param references - event seq to prior durable source seq supplied by Definitions.
    * @returns seqs whose resolved Location changed.
    */
-  rebuild(entries: readonly ConversationEventInput[], hasMore = false): ReadonlySet<number> {
+  rebuild(
+    entries: readonly ConversationEventInput[],
+    hasMore = false,
+    references: ReadonlyMap<number, number> = new Map(),
+  ): ReadonlySet<number> {
     const previousLocations = this.locations
     const turns = new Map<number, TurnDraft>()
     const coordinates = new Map<number, Coordinates>()
@@ -263,8 +263,8 @@ export class ConversationLocationIndex {
 
     for (const { event } of entries) {
       const explicit = payloadCoordinates(event)
-      const replaced = explicit.turn === undefined && explicit.session !== true
-        ? internalReplacementCoordinates(event, coordinates)
+      const referenced = explicit.turn === undefined && explicit.session !== true
+        ? referencedCoordinates(references.get(event.seq), coordinates)
         : undefined
       if (event.type === 'turn/start') {
         currentTurn = event.data.turn
@@ -279,11 +279,13 @@ export class ConversationLocationIndex {
         currentTurn = explicit.turn
         if (explicit.step !== undefined) currentStep = explicit.step
       }
-      const turn = explicit.session === true ? undefined : explicit.turn ?? replaced?.turn ?? currentTurn
-      const step = explicit.session === true || event.type === 'turn/start' || event.type === 'turn/end'
+      const session = explicit.session === true || referenced?.session === true
+      const turn = session ? undefined : explicit.turn ?? referenced?.turn ?? currentTurn
+      const step = session || event.type === 'turn/start' || event.type === 'turn/end'
         ? undefined
-        : explicit.step ?? replaced?.step ?? (turn === currentTurn ? currentStep : undefined)
+        : explicit.step ?? referenced?.step ?? (turn === currentTurn ? currentStep : undefined)
       coordinates.set(event.seq, {
+        ...session || turn === undefined ? { session: true } : {},
         ...turn === undefined ? {} : { turn },
         ...turn === undefined || step === undefined ? {} : { step },
       })
@@ -472,19 +474,20 @@ export class ConversationLocationIndex {
   /**
    * Index one non-boundary tail event without rescanning the window.
    * @param event - contiguous appended event.
+   * @param sourceSeq - prior durable event whose Location this event inherits.
    */
-  appendNonBoundary(event: SessionEvent): void {
+  appendNonBoundary(event: SessionEvent, sourceSeq?: number): void {
     const explicit = payloadCoordinates(event)
     if (explicit.session === true) {
-      this.coordinates.set(event.seq, {})
+      this.coordinates.set(event.seq, { session: true })
       this.locations.set(event.seq, SESSION_LOCATION)
       return
     }
     if (explicit.turn === undefined) {
-      const replaced = internalReplacementCoordinates(event, this.coordinates)
-      if (replaced !== undefined) {
-        this.coordinates.set(event.seq, replaced)
-        this.indexTurnSeq(replaced.turn as number, event.seq)
+      const referenced = referencedCoordinates(sourceSeq, this.coordinates)
+      if (referenced !== undefined) {
+        this.coordinates.set(event.seq, referenced)
+        if (referenced.turn !== undefined) this.indexTurnSeq(referenced.turn, event.seq)
         this.locations.set(event.seq, this.resolve(event.seq))
         return
       }
@@ -497,6 +500,7 @@ export class ConversationLocationIndex {
     const turn = explicit.turn ?? this.currentTurn
     const step = explicit.step ?? (turn === this.currentTurn ? this.currentStep : undefined)
     this.coordinates.set(event.seq, {
+      ...turn === undefined ? { session: true } : {},
       ...turn === undefined ? {} : { turn },
       ...turn === undefined || step === undefined ? {} : { step },
     })

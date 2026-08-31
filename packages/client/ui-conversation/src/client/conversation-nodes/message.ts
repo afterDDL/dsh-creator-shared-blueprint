@@ -37,6 +37,11 @@ export const messageDefinition: ConversationNodeDefinition<MessageNode> = {
     && !isCompactionCheckpoint(event)
     ? { id: String(event.data.id), role: 'start' }
     : null,
+  locationReference: event => event.type === 'user/message'
+    && isReplacementSurfaceEvent(event)
+    && hasInternalPresentation(event.data.source)
+    ? { seq: event.surfaceOp.end }
+    : null,
   start: (_context, match, reader) => {
     if (match.event.type !== 'user/message') throw new Error('input-message start requires user/message')
     const event = match.event

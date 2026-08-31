@@ -17,6 +17,11 @@ export interface ConversationMatchResult {
   readonly role: 'start' | 'update'
 }
 
+/** Prior durable event whose resolved Location one projection event inherits. */
+export interface ConversationLocationReference {
+  readonly seq: number
+}
+
 /** Merge-extensible business values published against one Turn. */
 export interface ConversationTurnDataMap {}
 
@@ -178,6 +183,14 @@ export interface ConversationNodeDefinition<State = unknown> {
    * @returns identity and lifecycle role, or null when unrelated.
    */
   match(event: SessionEvent): ConversationMatchResult | null
+  /**
+   * Relocate one coordinate-free projection event to a prior durable event.
+   * The referenced event may be outside the current window; a later prepend
+   * then resolves the reference and replays affected Contexts.
+   * @param event - raw Session event; no Context or history access is available.
+   * @returns prior event reference, or null when ordinary Location inference applies.
+   */
+  locationReference?(event: SessionEvent): ConversationLocationReference | null
   /**
    * Create State from the unique start Match.
    * @param context - complete evidence currently collected for the Context.
