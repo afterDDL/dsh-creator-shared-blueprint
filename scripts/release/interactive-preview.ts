@@ -66,6 +66,9 @@ export function completeBuildManifest(options: CompleteBuildManifestOptions): Re
  * @returns YAML that keeps every packed DSH dependency off the public registry.
  */
 export function completeBuildWorkspace(dependencies: ReadonlyMap<string, string>): string {
+  const subprocessLocal = '@deepseek-ai/dsh-subprocess-local'
+  const subprocessLocalLocation = dependencies.get(subprocessLocal)
+  if (subprocessLocalLocation === undefined) throw new Error(`Complete Build is missing ${subprocessLocal}`)
   const overrides = [...dependencies]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, location]) => `  ${JSON.stringify(name)}: ${JSON.stringify(location)}`)
@@ -78,7 +81,7 @@ allowBuilds:
   esbuild: true
   koffi: true
   node-pty: true
-  "@deepseek-ai/dsh-subprocess-local": true
+  ${JSON.stringify(`${subprocessLocal}@${subprocessLocalLocation}`)}: true
   "@google/genai": false
   node-addon-require-builtin: false
   protobufjs: false

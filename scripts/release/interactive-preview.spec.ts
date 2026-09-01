@@ -51,12 +51,14 @@ describe('Interactive Preview release packaging', () => {
 
   it('overrides transitive DSH dependencies to bundle-local tarballs', () => {
     const workspace = completeBuildWorkspace(new Map([
+      ['@deepseek-ai/dsh-subprocess-local', 'file:packages/subprocess-local.tgz'],
       ['@deepseek-ai/dsh-tool-agent-preset-authoring', 'file:packages/tool-authoring.tgz'],
       [INTERACTIVE_PREVIEW_PACKAGE, `file:packages/${INTERACTIVE_PREVIEW_PACKAGE}-${INTERACTIVE_PREVIEW_VERSION}.tgz`],
     ]))
 
     expect(workspace).toContain('"@deepseek-ai/dsh-tool-agent-preset-authoring": "file:packages/tool-authoring.tgz"')
     expect(workspace).toContain('"dsh-shared-blueprint": "file:packages/dsh-shared-blueprint-0.1.0-beta.1.tgz"')
+    expect(workspace).toContain('"@deepseek-ai/dsh-subprocess-local@file:packages/subprocess-local.tgz": true')
     expect(workspace).toContain('allowBuilds:')
     expect(workspace).not.toMatch(/[A-Z]:\\/u)
   })
