@@ -42,11 +42,9 @@ export interface DemoScenarioDependencies {
 }
 
 const CREATOR_PROMPT = '我要一个上市公司研究 Agent。它需要研究公司的业务、财务表现和行业竞争，能搜索公开资料、读取我提供的财报，最后输出结构化研究报告。'
-const PURPOSE_PROMPT = '不要给投资建议，只做公司研究和估值分析。'
-const SKILL_PROMPT = '输入本地 CSV，提取营收、净利润、PE、PB，输出结构化摘要。'
-const SUBAGENT_PROMPT = '让它负责行业研究，包括市场规模、主要玩家和竞争格局，主 Agent 继续负责公司和财务分析。'
-const TEST_PROMPT = '分析 NVIDIA 最近一年的业务、财务表现和行业竞争情况。'
-const SUBAGENT_REQUEST = /协作 Agent|行业竞争分析协作者|让它负责行业研究|市场规模.*主要玩家.*竞争格局/u
+const TEST_PROMPT = '分析 NVIDIA 最近一年的业务、财务表现和行业竞争格局。'
+const SKILL_REQUEST = /CSV.*财务数据|财务数据.*PE.*PB/iu
+const SUBAGENT_REQUEST = /协作 Agent|行业竞争分析协作者|行业和竞争格局研究|市场规模.*主要玩家.*竞争格局/u
 
 function initialState(presetId: string): DemoScenarioState {
   return {
@@ -91,6 +89,16 @@ export class DemoScenarioController {
   private initialDraftTimer: number | undefined
   private initialSessionStarting = false
   private observationUpdate: Promise<void> = Promise.resolve()
+  private readonly lockedDrafts = new Map<SessionId, string>()
+  private composerObserver: MutationObserver | undefined
+  private readonly releaseComposerOnSend = (event: MouseEvent): void => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const button = target.closest('button[aria-label="发送消息"], button[aria-label="Send message"]')
+    if (button === null) return
+    const current = this.deps.ctx.sessions.list.getSnapshot().current
+    if (current !== undefined) this.unlockDraft(current)
+  }
 
   constructor(private readonly deps: DemoScenarioDependencies) {
     this.state = initialState(deps.creatorScenario.agent.id)
@@ -110,6 +118,9 @@ export class DemoScenarioController {
     void this.deps.blueprint.load().catch(() => undefined)
     this.stopList = this.deps.ctx.sessions.list.subscribe(() => { this.attachCurrentSession() })
     this.attachCurrentSession()
+    this.composerObserver = new MutationObserver(() => { this.syncComposerLock() })
+    this.composerObserver.observe(document.body, { childList: true, subtree: true })
+    document.addEventListener('click', this.releaseComposerOnSend, true)
     this.initialDraftTimer = window.setInterval(() => { this.ensureInitialDraft() }, 250)
   }
 
@@ -118,17 +129,18 @@ export class DemoScenarioController {
     if (this.initialDraftTimer !== undefined) window.clearInterval(this.initialDraftTimer)
     this.stopList()
     this.stopSession()
+    this.composerObserver?.disconnect()
+    document.removeEventListener('click', this.releaseComposerOnSend, true)
+    this.unlockComposer()
   }
 
   /**
-   * Select one real Blueprint node and route the scripted Purpose request through conversation.
+   * Select one real Blueprint node.
    * @param nodeId - stable Blueprint node identity to select.
    */
   selectNode(nodeId: string): void {
     this.deps.blueprint.selectNode(nodeId)
     this.update({ blueprint: { ...this.state.blueprint, selectedNodeId: nodeId } })
-    if (nodeId !== 'purpose:persona' || this.state.lifecycle === 'creating') return
-    void this.prefillPurpose()
   }
 
   /**
@@ -140,7 +152,7 @@ export class DemoScenarioController {
       lifecycle: 'applying',
       proposal: { status: 'applying', applyingNodeIds: changeSet.proposals.map(proposal => proposal.targetNodeId) },
     })
-    await new Promise(resolve => window.setTimeout(resolve, 2_600))
+    await new Promise(resolve => window.setTimeout(resolve, 800))
     await this.deps.blueprint.applyChangeSet(changeSet)
     this.update({ lifecycle: 'ready', proposal: { status: 'applied', applyingNodeIds: [] } })
     const current = this.deps.ctx.sessions.list.getSnapshot().current
@@ -148,16 +160,36 @@ export class DemoScenarioController {
   }
 
   /**
-   * Begin a scripted Skill or Subagent authoring Session.
-   * @param kind - capability mechanism to author.
+   * Submit the production inline edit and replay the Host-authored request into the scripted source Session.
+   * @param nodeId - editable Blueprint node identity.
+   * @param value - protected replacement value shown in the inline editor.
+   * @param expectedValue - committed value shown when editing began.
    */
-  async startCapability(kind: 'skill' | 'subagent'): Promise<void> {
+  async submitTextEdit(nodeId: string, value: string, expectedValue: string): Promise<void> {
+    await this.deps.blueprint.updateText(nodeId, value, expectedValue)
+    const current = this.deps.ctx.sessions.list.getSnapshot().current
+    if (current === undefined) throw new Error('Blueprint Demo edit Session is unavailable')
+    await this.promptSession(current, `将 Purpose 修改为：${value}`)
+  }
+
+  /**
+   * Submit a protected capability request from the real right-column form into the current Agent Session.
+   * @param request - fixed Demo request rendered by the production form.
+   */
+  async submitCapabilityRequest(request: string): Promise<void> {
+    const kind = SKILL_REQUEST.test(request) ? 'skill' : SUBAGENT_REQUEST.test(request) ? 'subagent' : null
+    if (kind === null) throw new Error('Blueprint Demo capability request does not match the scripted Golden Path')
+    this.deps.blueprint.clearSelection()
     this.update({
       lifecycle: 'authoring',
+      blueprint: { ...this.state.blueprint, selectedNodeId: null },
       capabilityAuthoring: { ...this.state.capabilityAuthoring, active: kind },
     })
-    const sessionId = await this.deps.createSession('cordis')
-    this.prefill(sessionId, kind === 'skill' ? SKILL_PROMPT : SUBAGENT_PROMPT)
+    const list = this.deps.ctx.sessions.list.getSnapshot()
+    const current = list.current
+    const sessionId = current ?? await this.deps.createSession(this.state.blueprint.presetId)
+    await this.deps.blueprint.activateSession(sessionId, this.state.blueprint.presetId)
+    await this.promptSession(sessionId, request)
   }
 
   /**
@@ -165,6 +197,7 @@ export class DemoScenarioController {
    * @param request - exact preset and revision selected for the trial.
    */
   async startTrial(request: BlueprintTrialRequest): Promise<void> {
+    this.deps.blueprint.closeModal()
     const sessionId = await this.deps.createSession(request.presetId)
     this.prefill(sessionId, TEST_PROMPT)
     this.deps.ctx.layout.openDetails()
@@ -182,23 +215,23 @@ export class DemoScenarioController {
     this.syncView()
   }
 
+  private async promptSession(sessionId: SessionId, text: string): Promise<void> {
+    const session = this.deps.ctx.sessions.binding(sessionId)?.session
+    if (session === undefined) throw new Error('Blueprint Demo Session is unavailable')
+    const result = await session.prompt([{ type: 'text', text }], 'queue')
+    if (!result.ok) throw new Error(result.error.message)
+  }
+
   private syncView(): void {
     const current = this.deps.blueprint.store.getSnapshot()
     this.deps.blueprint.store.set({ ...current, demo: flowState(this.state) })
   }
 
   private prefill(sessionId: SessionId, text: string): void {
+    this.lockedDrafts.set(sessionId, text)
     const actx = this.deps.ctx.sessions.scope(sessionId)
     if (actx !== undefined) this.deps.ctx.conversation.input.for(actx).setDraft(text)
-  }
-
-  private async prefillPurpose(): Promise<void> {
-    const list = this.deps.ctx.sessions.list.getSnapshot()
-    const current = list.current
-    const sessionId = current !== undefined && list.byId[current]?.agentPreset === this.state.blueprint.presetId
-      ? current
-      : await this.deps.createSession(this.state.blueprint.presetId)
-    this.prefill(sessionId, PURPOSE_PROMPT)
+    this.syncComposerLock()
   }
 
   private async currentSeed(): Promise<BlueprintDemoSeed> {
@@ -225,7 +258,7 @@ export class DemoScenarioController {
       const blueprint = structuredClone(current.blueprint)
       blueprint.revision = `demo-r${String(revisionNumber)}`
       if (kind === 'skill' && !blueprint.nodes.some(node => node.id === 'capability:skill:csv-financial-metrics')) {
-        const description = 'CSV 财报指标提取：读取本地 CSV，提取营收、净利润、PE、PB，并输出结构化摘要。'
+        const description = 'CSV 财务数据分析：读取本地 CSV，提取营收、净利润、PE 和 PB，并输出结构化摘要。'
         blueprint.nodes.push({
           id: 'capability:skill:csv-financial-metrics', type: 'capability', source: 'preset', status: 'active', editable: false, adapterRef: null,
           value: { kind: 'skill', name: 'csv-financial-metrics', description, callable: true, scope: 'preset', invocation: { modelInvocable: true, userInvocable: true } },
@@ -292,23 +325,42 @@ export class DemoScenarioController {
     const userMessages = snapshot.nodes.filter(node => node.kind === 'user' || node.kind === 'steering')
     const userText = userMessages.flatMap(node => node.content.flatMap(block => block.type === 'text' ? [block.text] : [])).join('\n')
     const toolNames = new Set(snapshot.nodes.flatMap(node => node.kind === 'tool-result' && node.call !== null ? [node.call.name] : []))
+    if (userMessages.length > 0) this.unlockDraft(sessionId)
     if (this.state.creator.sessionId === null && summary?.agentPreset === 'cordis' && userMessages.length > 0
-      && !/CSV|财务指标提取/iu.test(userText) && !SUBAGENT_REQUEST.test(userText)) {
+      && !SKILL_REQUEST.test(userText) && !SUBAGENT_REQUEST.test(userText)) {
       this.state = { ...this.state, creator: { ...this.state.creator, sessionId } }
     }
-    if (sessionId === this.state.creator.sessionId) {
-      this.observeCreatorSession(sessionId, snapshot, toolNames)
+    const capabilityRequest = SKILL_REQUEST.test(userText) || SUBAGENT_REQUEST.test(userText)
+    if (sessionId === this.state.creator.sessionId && !capabilityRequest) {
+      this.observeCreatorSession(sessionId, snapshot)
       return
     }
     if (toolNames.has('propose_blueprint_change') && this.state.proposal.status === 'idle') {
       this.update({ proposal: { status: 'presented', applyingNodeIds: [] } })
     }
-    if (toolNames.has('preset_validate') && /CSV|财务指标提取/iu.test(userText)
-      && !this.state.capabilityAuthoring.installed.skill) void this.publishCapability('skill')
-    else if (toolNames.has('preset_validate') && SUBAGENT_REQUEST.test(userText)
-      && !this.state.capabilityAuthoring.installed.subagent) void this.publishCapability('subagent')
+    const observation = this.deps.observeCreator(sessionId, summary?.agentPreset, snapshot)
+    const turnEnd = observation.lastTurnEnd
+    const latestUserSeq = observation.userMessages.at(-1)?.seq
+    const currentTurnEnded = turnEnd !== null && latestUserSeq !== undefined && turnEnd.seq > latestUserSeq
+    if (SKILL_REQUEST.test(userText) && !this.state.capabilityAuthoring.installed.skill) {
+      if (this.state.capabilityAuthoring.active !== 'skill') {
+        this.update({
+          lifecycle: 'authoring',
+          capabilityAuthoring: { ...this.state.capabilityAuthoring, active: 'skill' },
+        })
+      }
+      if (currentTurnEnded) void this.publishCapability('skill')
+    } else if (SUBAGENT_REQUEST.test(userText) && !this.state.capabilityAuthoring.installed.subagent) {
+      if (this.state.capabilityAuthoring.active !== 'subagent') {
+        this.update({
+          lifecycle: 'authoring',
+          capabilityAuthoring: { ...this.state.capabilityAuthoring, active: 'subagent' },
+        })
+      }
+      if (currentTurnEnded) void this.publishCapability('subagent')
+    }
     if (/NVIDIA|英伟达/iu.test(userText)
-      && this.deps.observeCreator(sessionId, summary?.agentPreset, snapshot).lastTurnEnd !== null
+      && currentTurnEnded
       && this.state.testSession.status === 'running') {
       this.update({ lifecycle: 'complete', testSession: { ...this.state.testSession, status: 'verified' } })
     }
@@ -317,7 +369,6 @@ export class DemoScenarioController {
   private observeCreatorSession(
     sessionId: SessionId,
     snapshot: ConversationSnapshot,
-    toolNames: ReadonlySet<string>,
   ): void {
     const observation = this.deps.observeCreator(sessionId, 'cordis', snapshot)
     this.observationUpdate = this.observationUpdate.catch(() => undefined).then(async () => {
@@ -329,7 +380,7 @@ export class DemoScenarioController {
           agent: this.deps.creatorScenario.agent,
           blueprint: {
             ...this.deps.creatorScenario.blueprint,
-            nodes: this.deps.creatorScenario.blueprint.nodes.filter(node => node.type === 'identity' || node.type === 'purpose'),
+            nodes: this.deps.creatorScenario.blueprint.nodes.filter(node => node.type === 'identity'),
           },
         })
         this.update({
@@ -337,19 +388,42 @@ export class DemoScenarioController {
           creator: { sessionId, projection: 'identity-purpose' },
         })
       }
-      if (toolNames.has('preset_copy') && this.state.creator.projection === 'identity-purpose') {
+      if (observation.presetCopies.length > 0 && this.state.creator.projection === 'identity-purpose') {
+        this.deps.adapter.replaceScenario({
+          agent: this.deps.creatorScenario.agent,
+          blueprint: {
+            ...this.deps.creatorScenario.blueprint,
+            nodes: this.deps.creatorScenario.blueprint.nodes.filter(node => node.type === 'identity' || node.type === 'purpose'),
+          },
+        })
+      }
+      if (observation.authoredPresets.length > observation.presetCopies.length
+        && this.state.creator.projection === 'identity-purpose') {
         this.deps.adapter.replaceScenario({
           agent: this.deps.creatorScenario.agent,
           blueprint: { ...this.deps.creatorScenario.blueprint, nodes: this.deps.creatorScenario.blueprint.nodes.filter(node => node.type !== 'output') },
         })
         this.update({ creator: { sessionId, projection: 'without-output' } })
       }
-      if (toolNames.has('write') && this.state.creator.projection !== 'complete') {
+      if (observation.validatedPresets.length > 0 && this.state.creator.projection !== 'complete') {
         this.deps.adapter.replaceScenario(this.deps.creatorScenario)
         this.update({ creator: { sessionId, projection: 'complete' } })
       }
       await this.deps.blueprint.pollCreator()
-      if (this.deps.blueprint.store.getSnapshot().creator?.status === 'ready') this.update({ lifecycle: 'ready' })
+      if (this.deps.blueprint.store.getSnapshot().creator?.status === 'ready') {
+        this.update({ lifecycle: 'ready' })
+      } else {
+        const projection = await this.deps.adapter.get({ presetId: this.state.blueprint.presetId })
+        if (projection.ok) {
+          const current = this.deps.blueprint.store.getSnapshot()
+          this.deps.blueprint.store.set({
+            ...current,
+            phase: 'ready',
+            presetId: this.state.blueprint.presetId,
+            blueprint: projection.value,
+          })
+        }
+      }
     })
   }
 
@@ -372,5 +446,43 @@ export class DemoScenarioController {
     const actx = this.deps.ctx.sessions.scope(current)
     if (actx !== undefined && this.deps.ctx.conversation.input.for(actx).state.getSnapshot().draft === CREATOR_PROMPT
       && this.initialDraftTimer !== undefined) window.clearInterval(this.initialDraftTimer)
+  }
+
+  private syncComposerLock(): void {
+    for (const customAnswer of document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+      'input[placeholder="输入你的答案"], textarea[placeholder="输入你的答案"], input[placeholder="Type your answer"], textarea[placeholder="Type your answer"]',
+    )) {
+      customAnswer.readOnly = true
+      customAnswer.setAttribute('aria-readonly', 'true')
+    }
+    const current = this.deps.ctx.sessions.list.getSnapshot().current
+    const textarea = document.querySelector<HTMLTextAreaElement>('[data-composer-card] textarea')
+    if (textarea === null) return
+    const expected = current === undefined ? undefined : this.lockedDrafts.get(current)
+    if (expected === undefined) {
+      if (textarea.dataset['blueprintDemoReadonly'] === 'true') this.unlockComposer()
+      return
+    }
+    textarea.readOnly = true
+    textarea.setAttribute('aria-readonly', 'true')
+    textarea.dataset['blueprintDemoReadonly'] = 'true'
+    const actx = current === undefined ? undefined : this.deps.ctx.sessions.scope(current)
+    if (actx !== undefined) {
+      const input = this.deps.ctx.conversation.input.for(actx)
+      if (input.state.getSnapshot().draft !== expected) input.setDraft(expected)
+    }
+  }
+
+  private unlockDraft(sessionId: SessionId): void {
+    if (!this.lockedDrafts.delete(sessionId)) return
+    if (this.deps.ctx.sessions.list.getSnapshot().current === sessionId) this.unlockComposer()
+  }
+
+  private unlockComposer(): void {
+    const textarea = document.querySelector<HTMLTextAreaElement>('[data-composer-card] textarea[data-blueprint-demo-readonly="true"]')
+    if (textarea === null) return
+    textarea.readOnly = false
+    textarea.removeAttribute('aria-readonly')
+    delete textarea.dataset['blueprintDemoReadonly']
   }
 }

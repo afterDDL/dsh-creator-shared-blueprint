@@ -763,7 +763,7 @@ function registerBlueprintSlots(ctx: ClientContext, face: BlueprintInjected): vo
 }
 
 type BlueprintFaceOverrides = Pick<BlueprintInjected, 'selectPreset' | 'selectNode' | 'selectCapability' | 'applyChangeSet'>
-  & Partial<Pick<BlueprintInjected, 'startDemoCapability' | 'resetDemo'>>
+  & Partial<Pick<BlueprintInjected, 'updateText' | 'beginCapabilityHandoff' | 'resetDemo'>>
 
 function blueprintFace(
   controller: BlueprintUiController,
@@ -894,8 +894,9 @@ export function mountBlueprintDemoUi(
     selectPreset: presetId => controller.selectPreset(presetId),
     selectNode: (nodeId) => { scenario.selectNode(nodeId) },
     selectCapability: (capabilityId, label, nodeId) => { controller.selectCapability(capabilityId, label, nodeId) },
+    updateText: (nodeId, value, expectedValue) => scenario.submitTextEdit(nodeId, value, expectedValue),
     applyChangeSet: changeSet => scenario.applyChangeSet(changeSet),
-    startDemoCapability: kind => scenario.startCapability(kind),
+    beginCapabilityHandoff: request => scenario.submitCapabilityRequest(request),
     resetDemo: () => { scenario.reset() },
   })
   registerBlueprintSlots(ctx, face)

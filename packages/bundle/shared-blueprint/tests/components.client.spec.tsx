@@ -580,11 +580,10 @@ describe('Interactive Blueprint presentation', () => {
     expect(screen.queryByRole('button', { name: '编辑' })).toBeNull()
   })
 
-  it('routes Demo adjustments through conversation and shows the next intended action', () => {
+  it('keeps the Demo Purpose and capability requests in the production right-column controls', async () => {
     const actions = props()
     const demoActions = {
       ...actions,
-      startDemoCapability: vi.fn(() => Promise.resolve()),
       resetDemo: vi.fn(),
       useBlueprintUi: <T,>(selector: (value: BlueprintUiState) => T): T => selector({
         phase: 'ready', agents: [], presetId: 'competitive-research', blueprint: BLUEPRINT,
@@ -604,17 +603,37 @@ describe('Interactive Blueprint presentation', () => {
 
     render(<BlueprintPanel {...(demoActions as unknown as BlueprintPanelProps)} />)
 
-    expect(screen.getByText('可试用 · 下一步：调整「做什么」')).toBeTruthy()
-    expect(screen.getByText('点击「调整」，左侧会预填修改要求；发送后再应用提案。')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: '编辑' })).toBeNull()
+    expect(screen.getByText('可试用')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('左侧会预填修改要求')
 
     const purposeRow = screen.getByRole('button', { name: '选择做什么' })
-    const adjustButton = purposeRow.querySelector('button')
-    expect(adjustButton?.textContent).toBe('调整')
-    if (adjustButton !== null) fireEvent.click(adjustButton)
-
+    fireEvent.click(purposeRow)
     expect(actions.selectNode).toHaveBeenCalledWith('purpose:persona')
-    expect(screen.queryByRole('textbox', { name: '编辑做什么' })).toBeNull()
+    const editButton = purposeRow.querySelector('button')
+    expect(editButton?.textContent).toBe('编辑')
+    if (editButton !== null) fireEvent.click(editButton)
+
+    const purposeEditor = screen.getByRole<HTMLTextAreaElement>('textbox', { name: '编辑做什么' })
+    expect(purposeEditor.readOnly).toBe(true)
+    expect(purposeEditor.value).toBe('研究上市公司的业务、财务表现、估值与行业竞争；仅提供公司研究和估值分析，不提供投资建议。')
+    fireEvent.click(screen.getByRole('button', { name: '提交修改' }))
+    expect(actions.updateText).toHaveBeenCalledWith(
+      'purpose:persona',
+      '研究上市公司的业务、财务表现、估值与行业竞争；仅提供公司研究和估值分析，不提供投资建议。',
+      '比较竞品。',
+    )
+
+    await waitFor(() => { expect(screen.queryByRole('textbox', { name: '编辑做什么' })).toBeNull() })
+    fireEvent.click(screen.getByRole('button', { name: '＋ 添加能力' }))
+    expect(screen.getByText('你希望这个 Agent 还能做什么？')).toBeTruthy()
+    expect(screen.queryByRole('menu', { name: '添加能力' })).toBeNull()
+    const capabilityRequest = screen.getByPlaceholderText<HTMLTextAreaElement>('例如：帮我分析上市公司财报')
+    expect(capabilityRequest.readOnly).toBe(true)
+    expect(capabilityRequest.value).toBe('我希望它可以处理 CSV 财务数据，提取营收、净利润、PE 和 PB，并生成结构化摘要。')
+    fireEvent.click(screen.getByRole('button', { name: '交给 AI' }))
+    expect(actions.beginCapabilityHandoff).toHaveBeenCalledWith(
+      '我希望它可以处理 CSV 财务数据，提取营收、净利润、PE 和 PB，并生成结构化摘要。',
+    )
   })
 
   it('keeps an unmapped Identity selectable and routes adjustment to conversation', () => {
