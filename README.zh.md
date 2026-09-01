@@ -16,7 +16,7 @@ Shared Blueprint 将难以理解的 agent 创建过程，转化为用户和 AI �
 
 | 入口 | 适用对象 | 状态 |
 |---|---|---|
-| Try Demo | 希望在线快速体验的用户 | 尚未托管；不会用占位 URL 冒充 Demo。 |
+| [Try Demo](https://afterddl.github.io/dsh-creator-shared-blueprint/) | 希望在线快速体验的用户 | 已上线 scripted 交互 Demo；无需 DSH 后端或模型服务凭据。 |
 | [Complete Build](release/interactive-preview/INSTALL.md#complete-build) | 希望用最短路径运行产品的用户 | 推荐入口。将 Shared Blueprint 与兼容的 DSH build 打包在一起；该 build 包含上游尚未提供的 7 个通用扩展 seam。 |
 | [Standalone Bundle](release/interactive-preview/INSTALL.md#standalone-bundle) | DSH 插件与生态开发者 | 完全在仓库外实现，不依赖任何私有 Core API。在上游 DSH 提供等价扩展 API 前，需要使用兼容性 seam 层。 |
 

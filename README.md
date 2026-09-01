@@ -16,7 +16,7 @@ This is a working beta under active stress testing and compatibility hardening. 
 
 | Entry | For | Status |
 |---|---|---|
-| Try Demo | A hosted first look | Not hosted yet; no placeholder URL is presented as a demo. |
+| [Try Demo](https://afterddl.github.io/dsh-creator-shared-blueprint/) | A hosted first look | Live scripted interactive Demo; no DSH backend or provider credentials required. |
 | [Complete Build](release/interactive-preview/INSTALL.md#complete-build) | People who want the shortest path to the product | Recommended. Bundles Shared Blueprint with a compatible DSH build containing the 7 generic extension seams not yet available upstream. |
 | [Standalone Bundle](release/interactive-preview/INSTALL.md#standalone-bundle) | DSH plugin and ecosystem developers | Fully out-of-tree with 0 private Core dependencies. Requires the compatibility seam layer until equivalent extension APIs are available in upstream DSH. |
 
