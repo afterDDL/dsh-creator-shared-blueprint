@@ -27,8 +27,6 @@ export interface BlueprintInjected {
   cancelProposal: (changeSet: BlueprintChangeSet) => Promise<void>
   applyChangeSet: (changeSet: BlueprintChangeSet) => Promise<void>
   cancelChangeSet: (changeSet: BlueprintChangeSet) => Promise<void>
-  /** Demo-only deterministic capability authoring entry. */
-  startDemoCapability?: (kind: 'skill' | 'subagent') => Promise<void>
   /** Demo-only reset to the initial Creator page. */
   resetDemo?: () => void
 }

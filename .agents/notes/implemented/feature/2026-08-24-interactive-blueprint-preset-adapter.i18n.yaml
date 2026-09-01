@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-interactive-blueprint-preset-adapter.md
-2026-08-24-interactive-blueprint-preset-adapter.md: 97b353c9396bef4b85c80509516740a5dc3a4342
-2026-08-24-interactive-blueprint-preset-adapter.zh.md: a0bf20de20d17aef0321689806654e11203d8934
+2026-08-24-interactive-blueprint-preset-adapter.md: ddb9b01126e777380ff1af9af063fa3d602eb483
+2026-08-24-interactive-blueprint-preset-adapter.zh.md: 8594e4643496b5618861a94eb162508bbad01a77

@@ -17,6 +17,10 @@ const NODE_LABELS: Record<string, string> = {
   'capability:file-read': '文件读取',
 }
 
+const DEMO_PURPOSE_VALUE = '研究上市公司的业务、财务表现、估值与行业竞争；仅提供公司研究和估值分析，不提供投资建议。'
+const DEMO_SKILL_REQUEST = '我希望它可以处理 CSV 财务数据，提取营收、净利润、PE 和 PB，并生成结构化摘要。'
+const DEMO_SUBAGENT_REQUEST = '我希望行业和竞争格局研究可以交给一个专门的协作 Agent，主 Agent 继续负责公司业务和财务分析。'
+
 type BlueprintUiLabelLocale = 'zh' | 'en'
 
 function resolveBlueprintUiLabelLocale(blueprint: Blueprint): BlueprintUiLabelLocale {
@@ -89,10 +93,7 @@ function demoStatusLabel(state: BlueprintUiState, fallback: string): string {
   if (demo.phase === 'authoring-subagent') return '正在添加协作 Agent…'
   if (demo.phase === 'testing') return '正在试用 Agent…'
   if (demo.phase === 'complete') return '试用完成'
-  if (!demo.hasModifiedPurpose) return '可试用 · 下一步：调整「做什么」'
-  if (!demo.hasCsvSkill) return '可试用 · 下一步：添加 CSV Skill'
-  if (!demo.hasIndustrySubagent) return '可试用 · 下一步：添加协作 Agent'
-  return '可试用 · 下一步：试用 Agent'
+  return '可试用'
 }
 
 /** Sidebar preset roster, projected as the Builder's Agent list. */
@@ -135,18 +136,21 @@ interface EditableRowProps {
   summaryTitle?: string
   summaryDescription?: string
   submitLabel?: string
+  initialEditValue?: string
+  editorReadOnly?: boolean
   applying?: boolean | undefined
   labelLocale?: BlueprintUiLabelLocale
 }
 
 type EditableRowOverrides = Partial<Pick<
   EditableRowProps,
-  'displayValue' | 'summaryTitle' | 'summaryDescription' | 'submitLabel'
+  'displayValue' | 'summaryTitle' | 'summaryDescription' | 'submitLabel' | 'initialEditValue' | 'editorReadOnly'
 >>
 
 function EditableRow({
   node, selected, busy, directlyWritable, onSelect, onAdjust, onSave,
-  displayValue, summaryTitle, summaryDescription, submitLabel, applying = false, labelLocale = 'zh',
+  displayValue, summaryTitle, summaryDescription, submitLabel, initialEditValue, editorReadOnly = false,
+  applying = false, labelLocale = 'zh',
 }: EditableRowProps) {
   const value = typeof node.value === 'string' ? node.value : ''
   const [editing, setEditing] = useState(false)
@@ -164,7 +168,12 @@ function EditableRow({
   if (editing) {
     return (
       <div className={css.editor}>
-        <textarea aria-label={`${labelLocale === 'zh' ? '编辑' : 'Edit '}${nodeLabel(node, labelLocale)}`} value={draft} onChange={(event) => { setDraft(event.target.value) }} />
+        <textarea
+          aria-label={`${labelLocale === 'zh' ? '编辑' : 'Edit '}${nodeLabel(node, labelLocale)}`}
+          value={draft}
+          readOnly={editorReadOnly}
+          onChange={(event) => { setDraft(event.target.value) }}
+        />
         {saveError !== null && <div className={css.inlineError} role="alert">{saveError}</div>}
         <div className={css.editorActions}>
           <button type="button" disabled={saving} onClick={() => {
@@ -211,7 +220,7 @@ function EditableRow({
         <button type="button" className={css.textAction} disabled={busy} onClick={(event) => {
           event.stopPropagation()
           if (node.editable && directlyWritable) {
-            setDraft(value)
+            setDraft(initialEditValue ?? value)
             setExpectedValue(value)
             setSaveError(null)
             setEditing(true)
@@ -290,12 +299,14 @@ function SemanticCapabilityRow({ capability, selected, onSelect }: SemanticCapab
 
 interface CapabilityRequestFormProps {
   busy: boolean
+  initialRequest?: string
+  readOnly?: boolean
   onCancel: () => void
   onSubmit: (request: string) => Promise<void>
 }
 
-function CapabilityRequestForm({ busy, onCancel, onSubmit }: CapabilityRequestFormProps) {
-  const [request, setRequest] = useState('')
+function CapabilityRequestForm({ busy, initialRequest = '', readOnly = false, onCancel, onSubmit }: CapabilityRequestFormProps) {
+  const [request, setRequest] = useState(initialRequest)
   const ready = request.trim().length > 0
   return (
     <form className={css.capabilityRequest} onSubmit={(event) => {
@@ -310,6 +321,7 @@ function CapabilityRequestForm({ busy, onCancel, onSubmit }: CapabilityRequestFo
         maxLength={500}
         placeholder="例如：帮我分析上市公司财报"
         value={request}
+        readOnly={readOnly}
         onChange={(event) => { setRequest(event.target.value) }}
       />
       <div className={css.capabilityRequestActions}>
@@ -338,25 +350,24 @@ function focusConversationComposer(): void {
 /** Right-column Blueprint with node-governed editing affordances. */
 export function BlueprintPanel({
   useBlueprintUi, load, selectNode, selectCapability, updateText, beginCapabilityHandoff, openModal,
-  startDemoCapability, resetDemo,
+  resetDemo,
 }: BlueprintPanelProps) {
   const state = useBlueprintUi(value => value)
   const [expanded, setExpanded] = useState({ behaviors: false, outputs: false })
   const [capabilityRequestOpen, setCapabilityRequestOpen] = useState(false)
-  const [demoCapabilityMenu, setDemoCapabilityMenu] = useState<'root' | 'existing' | null>(null)
   const [technicalDetailsNodeId, setTechnicalDetailsNodeId] = useState<string | null>(null)
   useEffect(() => { void load() }, [load])
   const blueprint = state.blueprint
   useEffect(() => {
     setExpanded({ behaviors: false, outputs: false })
     setCapabilityRequestOpen(false)
-    setDemoCapabilityMenu(null)
     setTechnicalDetailsNodeId(null)
   }, [blueprint?.preset.id])
   const creator = state.creator
-  const demoMode = startDemoCapability !== undefined
+  const demoMode = resetDemo !== undefined
   const creatorLocked = creator !== null && creator.status !== 'ready'
   const executorLocked = capabilityExecutorActive(state.capabilityHandoff)
+    || state.demo?.pendingCapability !== null && state.demo?.pendingCapability !== undefined
   const interactionLocked = creatorLocked || executorLocked
   const selection = blueprintSelection(state)
   const adjustNode = (nodeId: string): void => {
@@ -427,7 +438,10 @@ export function BlueprintPanel({
     state,
     state.creator === null ? '当前 Agent 的结构摘要' : creatorStatusLabel(state.creator, true),
   )
-  const directlyWritable = !interactionLocked && !demoMode
+  const directlyWritable = !interactionLocked
+  const demoCapabilityRequest = state.demo?.hasCsvSkill !== true
+    ? DEMO_SKILL_REQUEST
+    : state.demo.hasIndustrySubagent !== true ? DEMO_SUBAGENT_REQUEST : ''
   const selectedCapabilityPresentation = selectedCapabilityValue === null
     || (selectedCapabilityValue['kind'] !== 'skill' && selectedCapabilityValue['kind'] !== 'delegation')
     ? null
@@ -494,11 +508,9 @@ export function BlueprintPanel({
               onAdjust={() => { adjustNode(purpose.id) }}
               onSave={(value, expected) => updateText(purpose.id, value, expected)}
               submitLabel={labelLocale === 'zh' ? '提交修改' : 'Submit change'}
+              {...(demoMode ? { initialEditValue: DEMO_PURPOSE_VALUE, editorReadOnly: true } : {})}
               applying={state.demo?.applyingNodeIds.includes(purpose.id)}
             />
-            {demoMode && state.demo?.phase === 'ready' && !state.demo.hasModifiedPurpose && (
-              <div className={css.caption}>点击「调整」，左侧会预填修改要求；发送后再应用提案。</div>
-            )}
           </section>
         )}
         <section className={`${css.section} ${css.capabilitySection}`}>
@@ -507,65 +519,22 @@ export function BlueprintPanel({
             <button
               type="button"
               className={css.addCapabilityButton}
-              aria-expanded={demoMode ? demoCapabilityMenu !== null : capabilityRequestOpen}
+              aria-expanded={capabilityRequestOpen}
               disabled={state.busy || interactionLocked}
               onClick={() => {
-                if (demoMode) setDemoCapabilityMenu(value => value === null ? 'root' : null)
-                else setCapabilityRequestOpen(value => !value)
+                setCapabilityRequestOpen(value => !value)
               }}
               onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
                 event.preventDefault()
-                if (demoMode) setDemoCapabilityMenu(value => value === null ? 'root' : null)
+                setCapabilityRequestOpen(value => !value)
               }}
             >{labelLocale === 'zh' ? '＋ 添加能力' : '+ Add capability'}</button>
           </div>
-          {demoMode && demoCapabilityMenu !== null && (
-            <div className={css.capabilityMenu} role="menu" aria-label="添加能力">
-              {demoCapabilityMenu === 'root' ? (
-                <>
-                  <button type="button" role="menuitem" onClick={() => { setDemoCapabilityMenu('existing') }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); setDemoCapabilityMenu('existing') } }}><span>从现有能力中添加</span><span>›</span></button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setDemoCapabilityMenu(null)
-                      void startDemoCapability('skill')
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter') return
-                      event.preventDefault()
-                      setDemoCapabilityMenu(null)
-                      void startDemoCapability('skill')
-                    }}
-                  ><span>创建 Skill</span><small>沉淀可复用工作流</small></button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setDemoCapabilityMenu(null)
-                      void startDemoCapability('subagent')
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter') return
-                      event.preventDefault()
-                      setDemoCapabilityMenu(null)
-                      void startDemoCapability('subagent')
-                    }}
-                  ><span>添加协作 Agent</span><small>委派独立研究任务</small></button>
-                </>
-              ) : (
-                <>
-                  <button type="button" role="menuitem" onClick={() => { setDemoCapabilityMenu('root') }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); setDemoCapabilityMenu('root') } }}><span>‹ 返回</span></button>
-                  <button type="button" role="menuitem" disabled><span>网页搜索</span><small>已启用</small></button>
-                  <button type="button" role="menuitem" disabled><span>文件读取</span><small>已启用</small></button>
-                </>
-              )}
-            </div>
-          )}
-          {!demoMode && capabilityRequestOpen && (
+          {capabilityRequestOpen && (
             <CapabilityRequestForm
               busy={state.busy}
+              {...(demoMode ? { initialRequest: demoCapabilityRequest, readOnly: true } : {})}
               onCancel={() => { setCapabilityRequestOpen(false) }}
               onSubmit={handoffCapability}
             />

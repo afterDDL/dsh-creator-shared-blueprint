@@ -1625,15 +1625,16 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   const pendingApprovalId = 'fx-approval-1' as Extract<MuxFrame, { type: 'approval/requested' }>['approvalId']
   /** Cleared once answered through respond; replay stops and approval/resolved is broadcast. */
   let approvalPending = true
-  interface DemoApproval {
+  interface DemoQuestion {
     rpcId: ReturnType<typeof RpcId>
-    approvalId: Extract<MuxFrame, { type: 'approval/requested' }>['approvalId']
     sessionId: SessionId
-    toolName: string
-    reason: string
-    resolve: (allowed: boolean) => void
+    turn: number
+    step: number
+    callId: string
+    questions: Extract<MuxFrame, { type: 'question/requested' }>['questions']
+    resolve: (answer: unknown) => void
   }
-  const demoApprovals = new Map<string, DemoApproval>()
+  const demoQuestions = new Map<string, DemoQuestion>()
   const pendingQuestionRpcId = mint()
   let questionPending = true
   const fixtureQuestions: Extract<MuxFrame, { type: 'question/requested' }>['questions'] = [
@@ -2238,51 +2239,47 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     appendDemoEvent(id, creatorEventFixtures.turnEnd(turn, { kind: 'completed' }))
     setRunning(id, false)
   }
-  const requestDemoApproval = (
+  const requestDemoQuestion = (
     id: SessionId,
     turn: number,
     step: number,
-    toolName: string,
-    args: Record<string, unknown>,
-    reason: string,
-    resolve: (allowed: boolean) => void,
+    questions: Extract<MuxFrame, { type: 'question/requested' }>['questions'],
+    resolve: (answer: unknown) => void,
   ): void => {
-    const callId = `blueprint-${String(turn)}-${String(step)}-${toolName}`
-    demoAssistant(id, turn, step, [{ type: 'tool-call', id: callId, name: toolName, arguments: JSON.stringify(args) } as ContentBlock])
-    appendDemoEvent(id, creatorEventFixtures.toolCall(turn, step, callId, toolName, args))
+    const callId = `blueprint-${String(turn)}-${String(step)}-ask_user_question`
+    const args = { questions }
+    demoAssistant(id, turn, step, [{ type: 'tool-call', id: callId, name: 'ask_user_question', arguments: JSON.stringify(args) } as ContentBlock])
+    appendDemoEvent(id, creatorEventFixtures.toolCall(turn, step, callId, 'ask_user_question', args))
     const rpcId = mint()
-    const approvalId = `blueprint-approval-${String(turn)}-${String(step)}` as DemoApproval['approvalId']
-    const approval: DemoApproval = { rpcId, approvalId, sessionId: id, toolName, reason, resolve }
-    demoApprovals.set(String(rpcId), approval)
+    const question: DemoQuestion = { rpcId, sessionId: id, turn, step, callId, questions, resolve }
+    demoQuestions.set(String(rpcId), question)
     for (const conn of muxConns) {
-      conn.push({ rpcId, payload: creatorInteractionFixtures.approvalRequested(id, approvalId, toolName, reason) })
+      conn.push({ rpcId, payload: creatorInteractionFixtures.questionRequested(id, questions) })
     }
-  }
-  const settleApprovedTool = (
-    approval: DemoApproval,
-    turn: number,
-    step: number,
-    result: string,
-    allowed: boolean,
-  ): void => {
-    const callId = `blueprint-${String(turn)}-${String(step)}-${approval.toolName}`
-    appendDemoEvent(approval.sessionId, creatorEventFixtures.toolResult(
-      turn, step, callId, allowed ? result : '用户拒绝了本次写入。', { isError: !allowed },
-    ))
-    appendDemoEvent(approval.sessionId, creatorEventFixtures.stepEnd(turn, step))
   }
 
   const startBlueprintCreator = (id: SessionId, turn: number): void => {
     demoAssistant(id, turn, 0, [{ type: 'reasoning', text: '先把需求拆成角色、研究目标、资料能力、工作规则与输出结构，再创建独立 preset。' }])
     appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
-    demoPlayer.schedule(1_500, () => { demoTool(id, turn, 1, 'read', { file_path: 'examples/agent-presets/company-research/README.md' }, '已读取 Agent preset 结构与字段说明。') })
-    demoPlayer.schedule(3_000, () => { demoTool(id, turn, 2, 'ask_user_question', { questions: [{ id: 'preset-strategy', question: '如何处理这个 Agent preset？', options: [{ label: '创建全新独立 preset', description: '为上市公司研究创建新的独立预设。' }] }] }, JSON.stringify({ answers: [{ id: 'preset-strategy', selected: ['创建全新独立 preset'] }] })) })
-    demoPlayer.schedule(4_800, () => { demoTool(id, turn, 3, 'pwsh', { command: 'Get-ChildItem .agent-presets' }, 'cordis\nstandard\nminimal') })
-    demoPlayer.schedule(6_500, () => { demoTool(id, turn, 4, 'cordis_define', { type: 'agent-preset', id: 'listed-company-research' }, '已定义 preset 组成。') })
-    demoPlayer.schedule(8_200, () => { demoTool(id, turn, 5, 'preset_copy', { source: 'standard', id: 'listed-company-research' }, '已复制为 listed-company-research。') })
-    demoPlayer.schedule(10_300, () => { demoTool(id, turn, 6, 'write', { file_path: '.agent-presets/listed-company-research/cordis.yml', content: 'purpose, behaviors, outputs' }, '已写入角色、目标、规则与输出结构。') })
-    demoPlayer.schedule(12_400, () => { demoTool(id, turn, 7, 'preset_validate', { id: 'listed-company-research' }, '验证通过。') })
-    demoPlayer.schedule(14_000, () => { demoFinish(id, turn, 8, '上市公司研究 Agent 已创建完成。你可以在右侧继续调整目标、添加专用 Skill 或协作 Agent，也可以直接试用。') })
+    demoPlayer.schedule(1_000, () => { demoTool(id, turn, 1, 'preset_copy', { from: 'standard', id: 'listed-company-research' }, '已建立上市公司研究 Agent 的独立结构。') })
+    demoPlayer.schedule(2_200, () => {
+      const questions = [{
+        id: 'research-use', header: '用途', question: '你希望研究结果更偏向哪种用途？',
+        options: [
+          { label: '公司基本面研究 (Recommended)', description: '聚焦业务、财务、估值和风险因素。' },
+          { label: '行业比较', description: '重点对比主要玩家与竞争格局。' },
+          { label: '投资研究', description: '加强估值情景与风险观察。' },
+        ],
+      }]
+      requestDemoQuestion(id, turn, 2, questions, (answer) => {
+        demoAssistant(id, turn, 3, text('已记下你的选择。我会继续补全研究能力、执行规则和结构化输出。'))
+        appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 3))
+        demoPlayer.schedule(1_500, () => { demoTool(id, turn, 4, 'cordis_define', { type: 'agent-preset', id: 'listed-company-research', answer }, '已定义公开资料检索、财报读取和研究规则。') })
+        demoPlayer.schedule(3_500, () => { demoTool(id, turn, 5, 'write', { file_path: '.agent-presets/listed-company-research/cordis.yml', content: 'purpose, behaviors, outputs' }, '已补全目标、规则与输出结构。') })
+        demoPlayer.schedule(5_000, () => { demoTool(id, turn, 6, 'preset_validate', { id: 'listed-company-research' }, '验证通过。') })
+        demoPlayer.schedule(6_500, () => { demoFinish(id, turn, 7, '上市公司研究 Agent 已创建完成。你可以在右侧继续调整目标、添加专用 Skill 或协作 Agent，也可以直接试用。') })
+      })
+    })
   }
 
   const startBlueprintPurpose = (id: SessionId, turn: number): void => {
@@ -2311,49 +2308,25 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   }
 
   const startBlueprintSkill = (id: SessionId, turn: number): void => {
-    demoAssistant(id, turn, 0, [{ type: 'reasoning', text: '这个需求适合沉淀为可复用 Skill：固定 CSV 字段映射、指标口径、缺失值提示与结构化输出。' }])
+    demoAssistant(id, turn, 0, text('正在判断能力需求，并为当前 Agent 配置 CSV 财务数据分析。'))
     appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
-    demoPlayer.schedule(2_000, () => { demoTool(id, turn, 1, 'read', { file_path: '.agents/skills/skill-creator/SKILL.md' }, '已读取 Skill 创建规范。') })
-    demoPlayer.schedule(4_200, () => { demoTool(id, turn, 2, 'pwsh', { command: 'Get-ChildItem .agent-presets/listed-company-research' }, 'cordis.yml') })
-    demoPlayer.schedule(6_500, () => { demoTool(id, turn, 3, 'cordis_define', { type: 'skill', name: 'csv-financial-metrics' }, '已生成 Skill 定义草稿。') })
-    demoPlayer.schedule(9_000, () => {
-      requestDemoApproval(id, turn, 4, 'write', { file_path: '.agent-presets/listed-company-research/skills/csv-financial-metrics/SKILL.md' }, '需要写入新的 CSV 财务指标提取 Skill。', (allowed) => {
-        const approval = [...demoApprovals.values()].find(candidate => candidate.sessionId === id && candidate.approvalId === `blueprint-approval-${String(turn)}-4`)
-        if (approval === undefined) return
-        settleApprovedTool(approval, turn, 4, '已写入 Skill 文件。', allowed)
-        if (!allowed) { demoFinish(id, turn, 5, '已取消创建 CSV 财务指标提取 Skill。'); return }
-        demoPlayer.schedule(2_300, () => { demoTool(id, turn, 5, 'preset_validate', { id: 'listed-company-research' }, 'Skill 已挂载，preset 验证通过。') })
-        demoPlayer.schedule(4_500, () => { demoFinish(id, turn, 6, 'CSV 财务指标提取 Skill 已创建并挂载到上市公司研究 Agent。') })
-      })
-    })
+    demoPlayer.schedule(3_000, () => { demoFinish(id, turn, 1, 'CSV 财务数据分析已配置完成，现在可以在研究任务中使用。') })
   }
 
   const startBlueprintSubagent = (id: SessionId, turn: number): void => {
-    demoAssistant(id, turn, 0, [{ type: 'reasoning', text: '行业研究是边界清晰的独立任务，适合交给一次性协作 Agent，再由主 Agent 汇总。' }])
+    demoAssistant(id, turn, 0, text('正在判断能力需求，并为当前 Agent 配置行业研究协作 Agent。'))
     appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
-    demoPlayer.schedule(2_200, () => { demoTool(id, turn, 1, 'read', { file_path: '.agent-presets/listed-company-research/cordis.yml' }, '已读取当前 preset composition。') })
-    demoPlayer.schedule(5_000, () => { demoTool(id, turn, 2, 'cordis_define', { type: 'subagent', name: 'industry-competition-researcher' }, '已定义协作 Agent 的责任和工具范围。') })
-    demoPlayer.schedule(8_000, () => { demoTool(id, turn, 3, 'preset_copy', { source: 'minimal', id: 'industry-competition-researcher' }, '已创建协作 Agent preset。') })
-    demoPlayer.schedule(11_000, () => {
-      requestDemoApproval(id, turn, 4, 'write', { file_path: '.agent-presets/listed-company-research/cordis.yml' }, '需要把行业研究协作 Agent 挂载到当前 Agent。', (allowed) => {
-        const approval = [...demoApprovals.values()].find(candidate => candidate.sessionId === id && candidate.approvalId === `blueprint-approval-${String(turn)}-4`)
-        if (approval === undefined) return
-        settleApprovedTool(approval, turn, 4, '已写入 delegation composition row。', allowed)
-        if (!allowed) { demoFinish(id, turn, 5, '已取消添加行业研究协作 Agent。'); return }
-        demoPlayer.schedule(2_800, () => { demoTool(id, turn, 5, 'preset_validate', { id: 'listed-company-research' }, '协作 Agent 与 delegation provider 均可用。') })
-        demoPlayer.schedule(5_500, () => { demoFinish(id, turn, 6, '行业研究协作 Agent 已挂载。主 Agent 可在研究任务中按需委派。') })
-      })
-    })
+    demoPlayer.schedule(3_000, () => { demoFinish(id, turn, 1, '行业研究协作 Agent 已配置完成。主 Agent 可以在研究任务中按需委派。') })
   }
 
   const startBlueprintTest = (id: SessionId, turn: number): void => {
     demoAssistant(id, turn, 0, [{ type: 'reasoning', text: '先检索公开资料并读取财务数据，再按当前 Blueprint 的研究边界形成简短报告。' }])
     appendDemoEvent(id, creatorEventFixtures.stepEnd(turn, 0))
-    demoPlayer.schedule(1_500, () => { demoTool(id, turn, 1, 'web_search', { query: 'NVIDIA latest annual report business segments revenue public sources' }, '找到 NVIDIA 年报与投资者关系公开资料。') })
-    demoPlayer.schedule(3_000, () => { demoTool(id, turn, 2, 'read', { file_path: 'uploads/NVIDIA-annual-report.pdf' }, '已读取用户提供的 NVIDIA 财报摘录。') })
-    if (demoCapabilities.csvSkill) demoPlayer.schedule(4_800, () => { demoTool(id, turn, 3, 'csv_financial_metrics', { source: 'NVIDIA financial table' }, '已提取营收、净利润、PE 与 PB 指标。') })
-    if (demoCapabilities.industrySubagent) demoPlayer.schedule(6_500, () => { demoTool(id, turn, 4, 'delegate_industry_research', { company: 'NVIDIA' }, '行业研究协作 Agent 已返回竞争格局摘要。') })
-    demoPlayer.schedule(9_000, () => { demoFinish(id, turn, 5, '## NVIDIA 简要研究\n\n- **业务**：核心增长由数据中心与加速计算需求驱动，业务集中度较高。\n- **财务**：公开财报显示营收与利润快速增长，但需关注周期性、供给约束与客户集中。\n- **行业竞争**：竞争来自专用加速器、云厂商自研芯片及其他 GPU 供应商。\n- **估值观察**：可结合增长持续性、利润率与资本开支周期进行情景分析。\n\n以上仅用于公司研究和估值分析，不构成任何投资建议。') })
+    demoPlayer.schedule(1_200, () => { demoTool(id, turn, 1, 'web_search', { query: 'NVIDIA latest annual report business segments revenue public sources' }, '找到 NVIDIA 年报与投资者关系公开资料。') })
+    demoPlayer.schedule(2_400, () => { demoTool(id, turn, 2, 'read', { file_path: 'uploads/NVIDIA-annual-report.pdf' }, '已读取用户提供的 NVIDIA 财报摘录。') })
+    if (demoCapabilities.csvSkill) demoPlayer.schedule(3_600, () => { demoTool(id, turn, 3, 'csv_financial_metrics', { source: 'NVIDIA financial table' }, '已提取营收、净利润、PE 与 PB 指标。') })
+    if (demoCapabilities.industrySubagent) demoPlayer.schedule(4_800, () => { demoTool(id, turn, 4, 'delegate_industry_research', { company: 'NVIDIA' }, '行业研究协作 Agent 已返回竞争格局摘要。') })
+    demoPlayer.schedule(6_500, () => { demoFinish(id, turn, 5, '## NVIDIA 简要研究\n\n- **业务**：核心增长由数据中心与加速计算需求驱动，业务集中度较高。\n- **财务**：公开财报显示营收与利润快速增长，但需关注周期性、供给约束与客户集中。\n- **行业竞争**：竞争来自专用加速器、云厂商自研芯片及其他 GPU 供应商。\n- **估值观察**：可结合增长持续性、利润率与资本开支周期进行情景分析。\n\n以上仅用于公司研究和估值分析，不构成任何投资建议。') })
   }
 
   globalThis.__dshBlueprintDemoFixture = options.blueprintDemo === true ? {
@@ -2659,9 +2632,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           })
         }
         if (options.blueprintDemo === true) {
-          if (/不要给投资建议/u.test(userText)) startBlueprintPurpose(id, turn)
-          else if (/CSV|财务指标提取/iu.test(userText)) startBlueprintSkill(id, turn)
-          else if (/协作 Agent|行业竞争分析协作者|让它负责行业研究|市场规模.*主要玩家.*竞争格局/u.test(userText)) startBlueprintSubagent(id, turn)
+          if (/不(?:希望它)?给投资建议|不提供投资建议/u.test(userText)) startBlueprintPurpose(id, turn)
+          else if (/CSV.*财务数据|财务数据.*PE.*PB/iu.test(userText)) startBlueprintSkill(id, turn)
+          else if (/协作 Agent|行业竞争分析协作者|行业和竞争格局研究|市场规模.*主要玩家.*竞争格局/u.test(userText)) startBlueprintSubagent(id, turn)
           else if (/NVIDIA|英伟达/iu.test(userText)) startBlueprintTest(id, turn)
           else startBlueprintCreator(id, turn)
         } else startReply(
@@ -3070,13 +3043,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             },
           })
         }
-        for (const approval of demoApprovals.values()) {
+        for (const question of demoQuestions.values()) {
           conn.push({
-            rpcId: approval.rpcId,
-            payload: {
-              type: 'approval/requested', sessionId: approval.sessionId,
-              approvalId: approval.approvalId, toolName: approval.toolName, reason: approval.reason,
-            },
+            rpcId: question.rpcId,
+            payload: creatorInteractionFixtures.questionRequested(question.sessionId, question.questions),
           })
         }
         if (questionPending) {
@@ -3202,19 +3172,23 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     respond(message: ClientResponse): Promise<RpcReceipt> {
       // Same routing discipline as the host: rpcId first, then the payload's
       // audit correlation; a settled or unknown id is not-pending.
-      const demoApproval = demoApprovals.get(String(message.rpcId))
-      if (demoApproval !== undefined) {
-        if (!message.result.ok) return Promise.resolve({ accepted: false, reason: 'bad-response' })
-        const value = message.result.value as { approvalId?: unknown; outcome?: unknown }
-        if (value.approvalId !== demoApproval.approvalId
-          || (value.outcome !== 'allowed-once' && value.outcome !== 'rejected')) {
-          return Promise.resolve({ accepted: false, reason: 'bad-response' })
+      const demoQuestion = demoQuestions.get(String(message.rpcId))
+      if (demoQuestion !== undefined) {
+        const submitted = message.result.ok
+          ? (message.result.value as { answer?: unknown }).answer
+          : undefined
+        const answer = submitted ?? {
+          answers: [{ id: 'research-use', selected: ['公司基本面研究 (Recommended)'] }],
         }
-        emitMux(creatorInteractionFixtures.approvalResolved(
-          demoApproval.sessionId, demoApproval.approvalId, value.outcome,
+        emitMux(creatorInteractionFixtures.questionResolved(
+          demoQuestion.sessionId, demoQuestion.rpcId, message.result.ok ? 'answered' : 'cancelled',
         ))
-        demoApproval.resolve(value.outcome === 'allowed-once')
-        demoApprovals.delete(String(message.rpcId))
+        appendDemoEvent(demoQuestion.sessionId, creatorEventFixtures.toolResult(
+          demoQuestion.turn, demoQuestion.step, demoQuestion.callId, JSON.stringify(answer),
+        ))
+        appendDemoEvent(demoQuestion.sessionId, creatorEventFixtures.stepEnd(demoQuestion.turn, demoQuestion.step))
+        demoQuestion.resolve(answer)
+        demoQuestions.delete(String(message.rpcId))
         return Promise.resolve({ accepted: true })
       }
       if (message.rpcId === pendingApprovalRpcId) {

@@ -139,6 +139,7 @@
     "demo:code-mode": "node scripts/demo-code-mode.mjs",
     "demo:cordis": "node scripts/demo-cordis.mjs",
     "demo:blueprint": "pnpm dsh web --patch examples/web-blueprint-demo/cordis.yml",
+    "demo:blueprint:build": "tsx scripts/build-blueprint-demo-static.ts",
     "demo:acp": "node --import tsx packages/examples/acp-demo/src/bin.ts --config examples/acp-agent/cordis.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
