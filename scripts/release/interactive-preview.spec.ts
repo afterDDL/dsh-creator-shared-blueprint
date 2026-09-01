@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   compatibilityManifest,
+  completeArchiveEntries,
   completeBuildManifest,
   completeBuildWorkspace,
   INTERACTIVE_PREVIEW_BASELINE,
@@ -9,6 +10,14 @@ import {
 } from './interactive-preview.ts'
 
 describe('Interactive Preview release packaging', () => {
+  it('creates stable package-rooted Complete Build archive entries', () => {
+    expect(completeArchiveEntries(['scripts\\start.mjs', 'pnpm-lock.yaml', 'package.json'])).toEqual([
+      'package/package.json',
+      'package/pnpm-lock.yaml',
+      'package/scripts/start.mjs',
+    ])
+  })
+
   it('uses a neutral standalone identity and relative Complete Build dependencies', () => {
     const manifest = completeBuildManifest({
       dependencies: new Map([

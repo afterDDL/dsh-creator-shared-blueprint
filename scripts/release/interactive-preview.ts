@@ -2,13 +2,13 @@
 
 import { createHash } from 'node:crypto'
 import {
-  copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { basename, join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { validateTarballPayload } from '../publication-payload.ts'
 import { releaseFamily, tarballName, type ReleaseMember } from './families.ts'
-import { capture, isEntry, npmInvocation, pnpmInvocation, run } from './process.ts'
+import { capture, isEntry, pnpmInvocation, run } from './process.ts'
 import { packedIdentity, tarballFiles } from './tarball.ts'
 
 export const INTERACTIVE_PREVIEW_VERSION = '0.1.0-beta.1'
@@ -116,6 +116,27 @@ export function compatibilityManifest(head: string): Record<string, unknown> {
 /** SHA-256 for one artifact. */
 function sha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
+}
+
+/**
+ * Normalize and sort Complete Build files under the portable package root.
+ * @param relativePaths - file paths relative to the staged Complete Build directory.
+ * @returns Stable POSIX archive entry names rooted at `package/`.
+ */
+export function completeArchiveEntries(relativePaths: readonly string[]): string[] {
+  return relativePaths.map(path => `package/${path.replaceAll('\\', '/')}`).sort((left, right) => left.localeCompare(right))
+}
+
+/** Collect every regular file below one directory. */
+function collectFiles(root: string, directory = root): string[] {
+  const files: string[] = []
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) files.push(...collectFiles(root, path))
+    else if (entry.isFile()) files.push(relative(root, path))
+    else throw new Error(`Complete Build contains unsupported filesystem entry ${path}`)
+  }
+  return files
 }
 
 /** Copy one family's clean tarballs into a private work directory. */
@@ -232,7 +253,8 @@ function main(): void {
   const standalonePath = join(artifacts, standaloneFilename)
   copyFileSync(standaloneWorkPath, standalonePath)
 
-  const completeRoot = join(work, 'complete-build')
+  const completeArchiveRoot = join(work, 'complete-archive')
+  const completeRoot = join(completeArchiveRoot, 'package')
   const completePackages = join(completeRoot, 'packages')
   mkdirSync(completePackages, { recursive: true })
   mkdirSync(join(completeRoot, 'scripts'), { recursive: true })
@@ -256,10 +278,16 @@ function main(): void {
   copyFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(completeRoot, 'THIRD_PARTY_NOTICES.md'))
   runPnpm(['install', '--lockfile-only', '--ignore-scripts', '--config.optional=false'], completeRoot)
   if (existsSync(join(completeRoot, 'node_modules'))) rmSync(join(completeRoot, 'node_modules'), { recursive: true, force: true })
-  const npm = npmInvocation(['pack', '--pack-destination', artifacts])
-  run(npm.command, npm.args, { cwd: completeRoot })
   const completeFilename = `shared-blueprint-interactive-preview-complete-build-${INTERACTIVE_PREVIEW_VERSION}.tgz`
   const completePath = join(artifacts, completeFilename)
+  const archiveEntries = completeArchiveEntries(collectFiles(completeRoot))
+  if (!archiveEntries.includes('package/pnpm-lock.yaml')) throw new Error('Complete Build archive would omit pnpm-lock.yaml')
+  const archiveList = join(work, 'complete-build.files')
+  writeFileSync(archiveList, `${archiveEntries.join('\n')}\n`)
+  run('tar', [
+    '--format', 'ustar', '--mtime', '1985-10-26T08:15:00Z', '-czf', completePath,
+    '-C', completeArchiveRoot, '-T', archiveList,
+  ], { cwd: root })
   if (!existsSync(completePath)) throw new Error(`Complete Build produced no ${completeFilename}`)
 
   const compatibilityFilename = `shared-blueprint-interactive-preview-compatibility-${INTERACTIVE_PREVIEW_VERSION}.json`
