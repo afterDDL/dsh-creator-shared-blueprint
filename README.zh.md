@@ -2,11 +2,13 @@
 
 [English](README.md) | 中文
 
+针对creator模式设计的插件。
+
 一个让用户与 AI 共同理解、讨论和塑造 DeepSeek Harness agent（智能体）的共享界面。
 
 **Interactive Preview · v0.1.0-beta.1**
 
-Shared Blueprint 将 agent 转化为用户和 AI 都能看到、指向、讨论和修改的结构。Interactive Preview 支持从自然语言请求到可用 agent 的完整创作路径，并可添加经过验证的 Skill 和 Subagent。
+Shared Blueprint 将难以理解的agent创建过程，转化为用户和 AI 都能看到、指向、讨论和修改的结构。Interactive Preview 支持在结构化页面中，从自然语言请求到可用 agent 的完整创作路径，并可添加经过验证的 Skill 和 Subagent。
 
 这是一个正在持续进行压力测试和兼容性加固的可运行 beta 版本，不代表稳定版、生产就绪或 DeepSeek 官方插件。
 
@@ -28,11 +30,11 @@ Shared Blueprint 将 agent 转化为用户和 AI 都能看到、指向、讨论�
 
 ## 可以做什么
 
-- 通过自然语言创建 agent。
-- 查看语义 Blueprint，并选择其中节点与 AI 讨论。
-- 在 Apply 修改正式 agent 前审阅 Proposal。
-- 通过隔离 authoring 与验证后发布添加 Skill 或 Subagent。
-- 启动 Try Agent 并使用生成的运行时。
+用自然语言创建 Agent：描述你想完成的任务，AI 会逐步将需求整理成可见的结构化 Agent Blueprint。
+和 AI 看着同一张 Blueprint 讨论：直接选中「角色、目标、能力、规则、输出」中的任一部分，围绕具体节点继续提问、澄清或调整。
+在真正修改 Agent 前确认变化：AI 会先生成 Proposal，明确展示准备修改的内容，由你确认后再 Apply。
+持续给 Agent 扩展能力：在结构化页面中，用自然语言创建 Skill 或添加协作 Agent；新增能力会直接回到 Blueprint 中，即使 Agent 逐渐变得复杂，结构和能力变化仍然清晰可见。
+直接试运行刚刚搭好的 Agent：点击 Try Agent，用当前 Blueprint 启动真实会话，验证刚刚看到、修改和新增的能力是否真正进入运行状态。
 
 ## 兼容性
 
