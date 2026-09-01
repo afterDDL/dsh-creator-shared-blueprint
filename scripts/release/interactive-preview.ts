@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import {
   copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { validateTarballPayload } from '../publication-payload.ts'
@@ -130,6 +131,26 @@ export function completeArchiveEntries(relativePaths: readonly string[]): string
   return relativePaths.map(path => `package/${path.replaceAll('\\', '/')}`).sort((left, right) => left.localeCompare(right))
 }
 
+/**
+ * Reject checkout- or host-specific paths from generated textual artifacts.
+ * @param text - generated artifact text.
+ * @param localRoots - exact checkout or temporary roots used by the build.
+ */
+export function assertPortableArtifactText(text: string, localRoots: readonly string[]): void {
+  const normalized = text.replaceAll('\\', '/')
+  const hits = [
+    [/[A-Z]:\/Users\//iu, 'Windows user directory'],
+    [/\/Users\//u, 'macOS user directory'],
+    [/\/home\//u, 'Linux home directory'],
+    [/\.artifacts\//u, 'release staging directory'],
+  ].flatMap(([pattern, label]) => pattern instanceof RegExp && pattern.test(normalized) ? [label as string] : [])
+  for (const root of localRoots) {
+    const normalizedRoot = resolve(root).replaceAll('\\', '/')
+    if (normalized.includes(normalizedRoot)) hits.push(`local root ${normalizedRoot}`)
+  }
+  if (hits.length > 0) throw new Error(`release artifact contains local paths: ${[...new Set(hits)].join(', ')}`)
+}
+
 /** Collect every regular file below one directory. */
 function collectFiles(root: string, directory = root): string[] {
   const files: string[] = []
@@ -253,6 +274,8 @@ function main(): void {
   if (standaloneIdentity.name !== INTERACTIVE_PREVIEW_PACKAGE || standaloneIdentity.version !== INTERACTIVE_PREVIEW_VERSION) {
     throw new Error(`unexpected standalone identity ${standaloneIdentity.name}@${standaloneIdentity.version}`)
   }
+  const standaloneClient = capture('tar', ['-xOf', standaloneWorkPath, 'package/lib/client.js'], { cwd: root })
+  assertPortableArtifactText(standaloneClient, [root, tmpdir()])
   const standalonePath = join(artifacts, standaloneFilename)
   copyFileSync(standaloneWorkPath, standalonePath)
 

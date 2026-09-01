@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assertPortableArtifactText,
   compatibilityManifest,
   completeArchiveEntries,
   completeBuildManifest,
@@ -10,6 +11,15 @@ import {
 } from './interactive-preview.ts'
 
 describe('Interactive Preview release packaging', () => {
+  it('rejects host-specific paths in generated artifact text', () => {
+    expect(() => assertPortableArtifactText('//#region C:\\Users\\builder\\checkout\\client.ts', []))
+      .toThrow('Windows user directory')
+    expect(() => assertPortableArtifactText('//#region /home/builder/checkout/client.ts', []))
+      .toThrow('Linux home directory')
+    expect(() => assertPortableArtifactText('//#region src/client/BlueprintUi.module.css', ['C:\\build\\checkout']))
+      .not.toThrow()
+  })
+
   it('creates stable package-rooted Complete Build archive entries', () => {
     expect(completeArchiveEntries(['scripts\\start.mjs', 'pnpm-lock.yaml', 'package.json'])).toEqual([
       'package/package.json',

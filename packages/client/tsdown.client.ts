@@ -10,7 +10,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { basename, dirname, relative, resolve as resolvePath, sep } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
@@ -227,17 +227,19 @@ function clientConfig(id: string, entry: string): UserConfig {
       name: 'dsh-css-modules-inline',
       resolveId(source: string, importer: string | undefined) {
         if (!source.endsWith('.module.css')) return null
-        const abs = importer !== undefined ? sourceAssetPath(source, importer) : source
-        return CSS_VIRTUAL_PREFIX + abs + CSS_VIRTUAL_SUFFIX
+        const file = importer !== undefined ? sourceAssetPath(source, importer) : resolvePath(source)
+        return CSS_VIRTUAL_PREFIX + repositoryAssetId(file) + CSS_VIRTUAL_SUFFIX
       },
       async load(virtualId: string) {
-        if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-        const fileId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX) || !virtualId.endsWith(CSS_VIRTUAL_SUFFIX)) return null
+        const assetId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+        const fileId = resolvePath(REPOSITORY_ROOT, assetId)
+        if (repositoryAssetId(fileId) !== assetId) throw new Error(`client bundle: invalid CSS asset id ${assetId}`)
         // The virtual id otherwise hides the physical stylesheet from Rolldown's watch graph.
         this.addWatchFile(fileId)
         const source = await readFile(fileId)
         const { code, exports: cssExports } = transform({
-          filename: fileId,
+          filename: assetId,
           code: source,
           cssModules: { pattern: '[hash]_[local]' },
           minify: true,
@@ -281,4 +283,13 @@ function sourceAssetPath(source: string, importer: string): string {
   const boundary = emitted.indexOf(marker)
   if (boundary < 0) return emitted
   return resolvePath(emitted.slice(0, boundary), 'src', emitted.slice(boundary + marker.length))
+}
+
+/** Stable repository-local identity for generated CSS modules and class hashes. */
+function repositoryAssetId(file: string): string {
+  const id = relative(REPOSITORY_ROOT, file)
+  if (id === '' || id === '..' || id.startsWith(`..${sep}`) || isAbsolute(id)) {
+    throw new Error(`client bundle: CSS asset must be repository-local, received ${file}`)
+  }
+  return id.split(sep).join('/')
 }

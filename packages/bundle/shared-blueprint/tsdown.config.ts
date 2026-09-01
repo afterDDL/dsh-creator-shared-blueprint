@@ -1,7 +1,7 @@
 /** Self-contained Host and browser builds for the installable Interactive Blueprint bundle. */
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { basename, dirname, resolve as resolvePath, sep } from 'node:path'
+import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
@@ -74,15 +74,17 @@ const client: UserConfig = {
     name: 'shared-blueprint-css-modules',
     resolveId(source: string, importer: string | undefined) {
       if (!source.endsWith('.module.css')) return null
-      const file = importer === undefined ? source : sourceAssetPath(source, importer)
-      return CSS_VIRTUAL_PREFIX + file + CSS_VIRTUAL_SUFFIX
+      const file = importer === undefined ? resolvePath(source) : sourceAssetPath(source, importer)
+      return CSS_VIRTUAL_PREFIX + packageAssetId(file) + CSS_VIRTUAL_SUFFIX
     },
     async load(virtualId: string) {
-      if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX)) return null
-      const file = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+      if (!virtualId.startsWith(CSS_VIRTUAL_PREFIX) || !virtualId.endsWith(CSS_VIRTUAL_SUFFIX)) return null
+      const assetId = virtualId.slice(CSS_VIRTUAL_PREFIX.length, -CSS_VIRTUAL_SUFFIX.length)
+      const file = resolvePath(PACKAGE_DIR, assetId)
+      if (packageAssetId(file) !== assetId) throw new Error(`shared-blueprint: invalid CSS asset id ${assetId}`)
       this.addWatchFile(file)
       const result = transform({
-        filename: file,
+        filename: assetId,
         code: await readFile(file),
         cssModules: { pattern: '[hash]_[local]' },
         minify: true,
@@ -129,4 +131,13 @@ function sourceAssetPath(source: string, importer: string): string {
   return boundary < 0
     ? emitted
     : resolvePath(emitted.slice(0, boundary), 'src', emitted.slice(boundary + marker.length))
+}
+
+/** Stable package-local identity for generated CSS modules and class hashes. */
+function packageAssetId(file: string): string {
+  const id = relative(PACKAGE_DIR, file)
+  if (id === '' || id === '..' || id.startsWith(`..${sep}`) || isAbsolute(id)) {
+    throw new Error(`shared-blueprint: CSS asset must be package-local, received ${file}`)
+  }
+  return id.split(sep).join('/')
 }
