@@ -56,6 +56,34 @@ export function npmInvocation(args: readonly string[]): CommandInvocation {
 }
 
 /**
+ * Resolve pnpm without relying on Windows command-script execution.
+ * @param args - pnpm CLI arguments.
+ * @returns A native executable and argument vector for `spawnSync`.
+ */
+export function pnpmInvocation(args: readonly string[]): CommandInvocation {
+  if (process.platform !== 'win32') return { command: 'pnpm', args }
+  const entrypoint = process.env.npm_execpath
+  if (entrypoint !== undefined && entrypoint !== '' && entrypoint.toLowerCase().includes('pnpm')) {
+    return { command: process.execPath, args: [entrypoint, ...args] }
+  }
+  const roots = [dirname(process.execPath), ...(process.env.PATH ?? '').split(delimiter)]
+  for (const root of new Set(roots)) {
+    if (root === '') continue
+    const candidates = [
+      join(root, 'pnpm.cjs'),
+      join(root, 'pnpm.mjs'),
+      join(root, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs'),
+      join(root, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
+      join(root, '..', '..', 'node', 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
+    ]
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return { command: process.execPath, args: [candidate, ...args] }
+    }
+  }
+  throw new Error('cannot locate the pnpm JavaScript entrypoint; invoke this command through a pnpm package script')
+}
+
+/**
  * Run a command and capture its output without judging the exit status.
  * @param command - executable name.
  * @param args - command arguments.

@@ -8,7 +8,7 @@ import { basename, join, relative, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { validateTarballPayload } from '../publication-payload.ts'
 import { releaseFamily, tarballName, type ReleaseMember } from './families.ts'
-import { capture, isEntry, npmInvocation, run } from './process.ts'
+import { capture, isEntry, npmInvocation, pnpmInvocation, run } from './process.ts'
 import { packedIdentity, tarballFiles } from './tarball.ts'
 
 export const INTERACTIVE_PREVIEW_VERSION = '0.1.0-beta.1'
@@ -108,6 +108,12 @@ function packFamily(root: string, familyId: 'dsh' | 'vendor', destination: strin
   return filenames
 }
 
+/** Run pnpm through the host's native Node executable. */
+function runPnpm(args: readonly string[], cwd: string): void {
+  const pnpm = pnpmInvocation(args)
+  run(pnpm.command, pnpm.args, { cwd })
+}
+
 /** Pack one package and validate its public payload. */
 function packMember(
   root: string,
@@ -115,7 +121,7 @@ function packMember(
   destination: string,
   validate: (member: ReleaseMember, files: readonly string[]) => void,
 ): string {
-  run('pnpm', ['--dir', member.directory, 'pack', '--pack-destination', destination], { cwd: root })
+  runPnpm(['--dir', member.directory, 'pack', '--pack-destination', destination], root)
   const filename = tarballName(member)
   const path = join(destination, filename)
   if (!existsSync(path)) throw new Error(`${member.name} produced no tarball at ${path}`)
@@ -181,7 +187,7 @@ function main(): void {
   if (branch !== INTERACTIVE_PREVIEW_BRANCH) throw new Error(`release packaging requires ${INTERACTIVE_PREVIEW_BRANCH}, got ${branch}`)
   if (capture('git', ['status', '--porcelain'], { cwd: root }) !== '') throw new Error('release packaging requires a clean working tree')
   const head = capture('git', ['rev-parse', 'HEAD'], { cwd: root })
-  if (!values['skip-build']) run('pnpm', ['run', 'build'], { cwd: root })
+  if (!values['skip-build']) runPnpm(['run', 'build'], root)
 
   rmSync(output, { recursive: true, force: true })
   const work = join(output, '.work')
@@ -193,7 +199,7 @@ function main(): void {
   const vendorTarballs = packFamily(root, 'vendor', join(work, 'vendor'))
   const standaloneDirectory = join(work, 'standalone')
   mkdirSync(standaloneDirectory, { recursive: true })
-  run('pnpm', ['--dir', PACKAGE_DIRECTORY, 'pack', '--pack-destination', standaloneDirectory], { cwd: root })
+  runPnpm(['--dir', PACKAGE_DIRECTORY, 'pack', '--pack-destination', standaloneDirectory], root)
   const standaloneFilename = `${INTERACTIVE_PREVIEW_PACKAGE}-${INTERACTIVE_PREVIEW_VERSION}.tgz`
   const standaloneWorkPath = join(standaloneDirectory, standaloneFilename)
   if (!existsSync(standaloneWorkPath)) throw new Error(`standalone package produced no ${standaloneFilename}`)
@@ -226,7 +232,7 @@ function main(): void {
   }
   copyFileSync(join(root, 'LICENSE'), join(completeRoot, 'LICENSE'))
   copyFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(completeRoot, 'THIRD_PARTY_NOTICES.md'))
-  run('pnpm', ['install', '--lockfile-only', '--ignore-scripts', '--config.optional=false'], { cwd: completeRoot })
+  runPnpm(['install', '--lockfile-only', '--ignore-scripts', '--config.optional=false'], completeRoot)
   if (existsSync(join(completeRoot, 'node_modules'))) rmSync(join(completeRoot, 'node_modules'), { recursive: true, force: true })
   const npm = npmInvocation(['pack', '--pack-destination', artifacts])
   run(npm.command, npm.args, { cwd: completeRoot })
