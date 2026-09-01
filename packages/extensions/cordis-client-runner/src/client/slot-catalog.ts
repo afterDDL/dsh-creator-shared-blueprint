@@ -449,7 +449,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'details\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-blueprint BlueprintPanel',
+      'dsh-shared-blueprint BlueprintPanel',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.details.default\', () => ctx.slots.register(\n      { name: \'conversation.details.default\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -614,7 +614,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-blueprint BlueprintSelectedContext id \'blueprint-context\'',
+      'dsh-shared-blueprint BlueprintSelectedContext id \'blueprint-context\'',
       'client-ui-conversation QueueDock id \'queue\'',
       'client-ui-conversation TodoDock id \'todo\'',
       'client-ui-goal GoalDock id \'goal\'',
@@ -1488,7 +1488,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-blueprint BlueprintOverlay id \'blueprint-modal\'',
+      'dsh-shared-blueprint BlueprintOverlay id \'blueprint-modal\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.overlay\', () => ctx.slots.register(\n      { name: \'shell.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
@@ -1519,34 +1519,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar\', () => ctx.slots.register(\n      { name: \'sidebar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-layout/src/client/index.ts:49',
-  },
-  {
-    key: 'sidebar.agents',
-    kind: 'single',
-    scope: 'root',
-    summary: 'Optional Agent roster shown above the workspace/session browser.',
-    doc: 'Optional Agent roster shown above the workspace/session browser.',
-    registerOptions: [],
-    ownerProps: [
-      '/** Owner share of the optional Agent roster. */\nexport interface SidebarAgentsOwnerProps {\n  /** The roster is hidden rather than compressed when the sidebar is a rail. */\n  wide: boolean\n}',
-    ],
-    ownerPropsReferences: [
-      'Agent',
-    ],
-    standardProps: [
-      'useSessions: SnapshotSelectorHook<SessionListState>',
-      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
-    ],
-    keyDomain: '',
-    hookContext: '',
-    slotInject: '',
-    declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
-    occupants: [
-      'client-ui-blueprint BlueprintAgentRoster',
-    ],
-    replaceRisk: 'shadows-shipped-ui',
-    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.agents\', () => ctx.slots.register(\n      { name: \'sidebar.agents\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:19',
   },
   {
     key: 'sidebar.footer.action',
@@ -1591,7 +1563,52 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:37',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:38',
+  },
+  {
+    key: 'sidebar.navigation.section',
+    kind: 'list',
+    scope: 'root',
+    summary: 'Additive navigation sections shown above the workspace/session browser.',
+    doc: 'Additive navigation sections shown above the workspace/session browser.',
+    registerOptions: [
+      {
+        name: 'id',
+        requirement: 'required',
+        type: 'string',
+        doc: 'Your cell key. Use an id of your own: a fresh id is added beside the shipped entries, while reusing a shipped id puts you in THAT cell and replaces it. Owners that filter by id address you by it.',
+      },
+      {
+        name: 'order',
+        requirement: 'optional',
+        type: 'number',
+        doc: 'Position among the entries, ascending (default 0).',
+      },
+      {
+        name: 'label',
+        requirement: 'optional',
+        type: 'string | (() => string)',
+        doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.',
+      },
+    ],
+    ownerProps: [
+      '/** Owner share of an additive navigation section above the workspace browser. */\nexport interface SidebarNavigationSectionOwnerProps {\n  /** Whether the sidebar currently presents wide content instead of the rail. */\n  wide: boolean\n  /** Request expansion while already collapsed; a wide sidebar leaves this as a no-op. */\n  expandSidebar: () => void\n}',
+    ],
+    ownerPropsReferences: [],
+    standardProps: [
+      'useSessions: SnapshotSelectorHook<SessionListState>',
+      'useWorkspaces: SnapshotSelectorHook<import(\'./workspaces/service.ts\').WorkspaceListState>',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
+    occupants: [
+      'dsh-shared-blueprint BlueprintAgentRoster id \'blueprint-agents\'',
+    ],
+    replaceRisk: 'none',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.navigation.section\', () => ctx.slots.register(\n      { name: \'sidebar.navigation.section\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:20',
   },
   {
     key: 'sidebar.settings',
@@ -1617,7 +1634,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:32',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:33',
   },
   {
     key: 'sidebar.workspaces',
@@ -1643,7 +1660,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:26',
+    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:27',
   },
   {
     key: 'sidebar.workspaces.directoryFlow',
@@ -1706,7 +1723,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.chat.node\' (client-ui-tool), so it exists while that entry is mounted',
     occupants: [
-      'client-ui-blueprint BlueprintProposalRow key \'propose_blueprint_change\'',
+      'dsh-shared-blueprint BlueprintRouteRow',
+      'dsh-shared-blueprint BlueprintRouteRow',
+      'dsh-shared-blueprint BlueprintProposalRow key \'propose_blueprint_change\'',
       'client-ui-skill SkillRow key \'skill\'',
       'client-ui-tool AskQuestionRow key \'ask_user_question\'',
       'client-ui-tool BashRow key \'bash\'',
