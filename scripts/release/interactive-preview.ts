@@ -55,13 +55,34 @@ export function completeBuildManifest(options: CompleteBuildManifestOptions): Re
       dsh: 'node node_modules/@deepseek-ai/dsh/lib/bin.js',
     },
     dependencies: Object.fromEntries([...options.dependencies].sort(([left], [right]) => left.localeCompare(right))),
-    pnpm: {
-      onlyBuiltDependencies: ['@deepseek-ai/dsh-subprocess-local', 'esbuild', 'koffi', 'node-pty'],
-      ignoredBuiltDependencies: ['@google/genai', 'node-addon-require-builtin', 'protobufjs'],
-    },
-    files: ['packages', 'scripts', 'INSTALL.md', 'COMPATIBILITY.md', 'RELEASE_NOTES.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'pnpm-lock.yaml'],
+    files: ['packages', 'scripts', 'INSTALL.md', 'COMPATIBILITY.md', 'RELEASE_NOTES.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'pnpm-lock.yaml', 'pnpm-workspace.yaml'],
     dshSharedBlueprint: { packageTarball: `packages/${options.standaloneFilename}` },
   }
+}
+
+/**
+ * Create the portable pnpm workspace configuration for local dependency overrides.
+ * @param dependencies - package names and bundle-relative tarball locations.
+ * @returns YAML that keeps every packed DSH dependency off the public registry.
+ */
+export function completeBuildWorkspace(dependencies: ReadonlyMap<string, string>): string {
+  const overrides = [...dependencies]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, location]) => `  ${JSON.stringify(name)}: ${JSON.stringify(location)}`)
+  return `packages: []
+
+overrides:
+${overrides.join('\n')}
+
+allowBuilds:
+  esbuild: true
+  koffi: true
+  node-pty: true
+  "@deepseek-ai/dsh-subprocess-local": true
+  "@google/genai": false
+  node-addon-require-builtin: false
+  protobufjs: false
+`
 }
 
 /**
@@ -226,13 +247,14 @@ function main(): void {
   copyFileSync(standaloneWorkPath, join(completePackages, standaloneFilename))
   dependencies.set(INTERACTIVE_PREVIEW_PACKAGE, `file:packages/${standaloneFilename}`)
   writeFileSync(join(completeRoot, 'package.json'), `${JSON.stringify(completeBuildManifest({ dependencies, standaloneFilename }), null, 2)}\n`)
+  writeFileSync(join(completeRoot, 'pnpm-workspace.yaml'), completeBuildWorkspace(dependencies))
   writeFileSync(join(completeRoot, 'scripts', 'start.mjs'), completeBuildLauncher(standaloneFilename))
   for (const filename of ['INSTALL.md', 'COMPATIBILITY.md', 'RELEASE_NOTES.md']) {
     copyFileSync(join(root, RELEASE_DOCS_DIRECTORY, filename), join(completeRoot, filename))
   }
   copyFileSync(join(root, 'LICENSE'), join(completeRoot, 'LICENSE'))
   copyFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(completeRoot, 'THIRD_PARTY_NOTICES.md'))
-  runPnpm(['install', '--ignore-workspace', '--lockfile-only', '--ignore-scripts', '--config.optional=false'], completeRoot)
+  runPnpm(['install', '--lockfile-only', '--ignore-scripts', '--config.optional=false'], completeRoot)
   if (existsSync(join(completeRoot, 'node_modules'))) rmSync(join(completeRoot, 'node_modules'), { recursive: true, force: true })
   const npm = npmInvocation(['pack', '--pack-destination', artifacts])
   run(npm.command, npm.args, { cwd: completeRoot })

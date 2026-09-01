@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   compatibilityManifest,
   completeBuildManifest,
+  completeBuildWorkspace,
   INTERACTIVE_PREVIEW_BASELINE,
   INTERACTIVE_PREVIEW_PACKAGE,
   INTERACTIVE_PREVIEW_VERSION,
@@ -37,5 +38,17 @@ describe('Interactive Preview release packaging', () => {
       compatibleCheckout: { commit: '0123456789abcdef' },
     })
     expect(JSON.stringify(manifest)).toContain('unsupported')
+  })
+
+  it('overrides transitive DSH dependencies to bundle-local tarballs', () => {
+    const workspace = completeBuildWorkspace(new Map([
+      ['@deepseek-ai/dsh-tool-agent-preset-authoring', 'file:packages/tool-authoring.tgz'],
+      [INTERACTIVE_PREVIEW_PACKAGE, `file:packages/${INTERACTIVE_PREVIEW_PACKAGE}-${INTERACTIVE_PREVIEW_VERSION}.tgz`],
+    ]))
+
+    expect(workspace).toContain('"@deepseek-ai/dsh-tool-agent-preset-authoring": "file:packages/tool-authoring.tgz"')
+    expect(workspace).toContain('"dsh-shared-blueprint": "file:packages/dsh-shared-blueprint-0.1.0-beta.1.tgz"')
+    expect(workspace).toContain('allowBuilds:')
+    expect(workspace).not.toMatch(/[A-Z]:\\/u)
   })
 })
