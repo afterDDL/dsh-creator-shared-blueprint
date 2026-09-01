@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type {
   Blueprint, BlueprintChangeProposal, BlueprintChangeSet, BlueprintSessionValidation,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
+} from 'dsh-shared-blueprint/contract'
 import {
   createSnapshotStore, SlotRegistry, type RunningToolCall, type ToolResultNode,
 } from '@deepseek-ai/dsh-client-runtime/client'

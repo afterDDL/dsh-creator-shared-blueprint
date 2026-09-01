@@ -7,7 +7,7 @@ import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
 import { typertPlugin } from '@deepseek-ai/dsh-typert-generator/tsdown'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-shared-blueprint'
+const PACKAGE_NAME = 'dsh-shared-blueprint'
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url))
 const CSS_VIRTUAL_PREFIX = '\0shared-blueprint-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'

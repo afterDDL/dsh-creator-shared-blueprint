@@ -10,7 +10,7 @@ import type {
   BlueprintChangeProposal, BlueprintChangeSet, BlueprintConversationContextRequest, BlueprintConversationContextResult,
   BlueprintNode, BlueprintSessionValidation,
   BlueprintProposalCancellation, BlueprintStructuredEditInput, BlueprintUserChangeInput,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
+} from 'dsh-shared-blueprint/contract'
 import {
   createSnapshotStore, type PendingInteraction, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-runtime/client'

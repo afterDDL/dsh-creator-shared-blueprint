@@ -1,10 +1,10 @@
-/** Package-owned invariant companion for `@deepseek-ai/dsh-shared-blueprint`. */
+/** Package-owned invariant companion for `dsh-shared-blueprint`. */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import { installBlueprintInvariants } from './host/invariant.ts'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-shared-blueprint'
+const PACKAGE_NAME = 'dsh-shared-blueprint'
 
 /** Cordis companion plugin name. */
 export const name = 'shared-blueprint-invariant'

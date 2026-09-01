@@ -84,7 +84,7 @@
     "node-addon-require-builtin": "^0.1.4"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-shared-blueprint": "workspace:^",
+    "dsh-shared-blueprint": "workspace:^",
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-host-frontend-static": "workspace:^",
     "@deepseek-ai/dsh-host-apiproxy": "workspace:^",

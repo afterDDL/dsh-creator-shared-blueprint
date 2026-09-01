@@ -92,6 +92,30 @@ function requireString(manifest: Record<string, unknown>, field: string, context
   return value
 }
 
+/**
+ * Read an optional package-owned release-family assignment.
+ * @param manifest - parsed package manifest.
+ * @param context - manifest path for diagnostics.
+ * @returns The assigned family, or undefined when the package follows path discovery.
+ */
+function assignedReleaseFamily(manifest: Record<string, unknown>, context: string): string | undefined {
+  const dsh = manifest.dsh
+  if (dsh === undefined) return undefined
+  if (dsh === null || typeof dsh !== 'object' || Array.isArray(dsh)) {
+    throw new Error(`${context} dsh must be an object`)
+  }
+  const release = (dsh as Record<string, unknown>).release
+  if (release === undefined) return undefined
+  if (release === null || typeof release !== 'object' || Array.isArray(release)) {
+    throw new Error(`${context} dsh.release must be an object`)
+  }
+  const family = (release as Record<string, unknown>).family
+  if (typeof family !== 'string' || family === '') {
+    throw new Error(`${context} dsh.release.family must be a non-empty string`)
+  }
+  return family
+}
+
 /** The executable a family's installed artifacts are driven through. */
 export interface InstalledEntry {
   /** Package that carries the executable. */
@@ -125,6 +149,8 @@ export abstract class ReleaseFamily {
     for (const manifestPath of manifestPaths) {
       const normalized = manifestPath.replaceAll('\\', '/')
       const manifest = readManifest(resolve(root, manifestPath))
+      const assignedFamily = assignedReleaseFamily(manifest, normalized)
+      if (assignedFamily !== undefined && assignedFamily !== this.id) continue
       const name = requireString(manifest, 'name', normalized)
       const version = requireString(manifest, 'version', normalized)
       if (name === WORKSPACE_ROOT_PACKAGE) throw new Error(`${normalized} selected the workspace root`)

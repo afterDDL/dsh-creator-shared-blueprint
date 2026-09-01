@@ -48,7 +48,7 @@ const PLUGINS: readonly (WebBootEntry & { bundlePath: string })[] = [
 ]
 
 const BLUEPRINT_DEMO_PLUGIN: WebBootEntry & { bundlePath: string } = {
-  id: '@deepseek-ai/dsh-shared-blueprint',
+  id: 'dsh-shared-blueprint',
   bundlePath: 'packages/bundle/shared-blueprint/lib/client.js',
   url: '/plugins/shared-blueprint.js',
   rev: 'fx',

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type {
   BlueprintApplyReceipt, BlueprintChangeSet, BlueprintProposalCancellation,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
+} from 'dsh-shared-blueprint/contract'
 import type { BlueprintUiState } from '../src/client/controller.ts'
 import { blueprintProposalStatus } from '../src/client/proposal-status.ts'
 

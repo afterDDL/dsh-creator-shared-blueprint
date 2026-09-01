@@ -1,15 +1,17 @@
-# @deepseek-ai/dsh-shared-blueprint
+# dsh-shared-blueprint
 
 [English](README.md) | 中文
 
-DSH 的可安装 Interactive Blueprint bundle。一个 package 同时拥有 Host adapter、durable event vocabulary、generated Remote、browser client 与 additive composition patch。标准 Web bundle 不挂载 Blueprint，必须显式安装。本 package 不包含 Inspect Mode。
+DSH 的 standalone Shared Blueprint Interactive Preview 包。一个 package 同时拥有 Host adapter、持久事件类型、generated Remote、browser client 与 additive composition patch。标准 Web bundle 不挂载 Blueprint，必须显式安装。本 package 不包含 Inspect Mode。
+
+版本 `0.1.0-beta.1` 是正在持续进行压力测试和兼容性加固的可运行 Preview/Beta。这是第三方 package，不是 DeepSeek 官方插件。它当前需要使用[兼容的 DSH checkout](../../../release/interactive-preview/COMPATIBILITY.md)；未经修改的 DSH `0.1.0-rc.7` 加本 package 不受支持。
 
 ## 安装
 
 把预构建 tarball 安装到 Web profile，然后启动普通 Web app：
 
 ```sh
-dsh plugin --profile web add ./deepseek-ai-dsh-shared-blueprint-0.1.0-rc.7.tgz
+dsh plugin --profile web add ./dsh-shared-blueprint-0.1.0-beta.1.tgz
 dsh web
 ```
 

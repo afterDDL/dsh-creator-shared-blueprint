@@ -16,6 +16,12 @@ function member(directory: string, name: string, manifest: Record<string, unknow
 }
 
 describe('release families', () => {
+  it('leaves independently versioned packages out of the dsh publish sequence', () => {
+    const members = releaseFamily('dsh').members(process.cwd())
+
+    expect(members.some(entry => entry.name === 'dsh-shared-blueprint')).toBe(false)
+  })
+
   it('names one tag for the whole dsh family and one per vendored package', () => {
     const dsh = releaseFamily('dsh')
     const vendor = releaseFamily('vendor')

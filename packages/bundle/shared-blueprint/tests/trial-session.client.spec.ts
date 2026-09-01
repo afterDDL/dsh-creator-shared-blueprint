@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { BlueprintSessionValidation } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { BlueprintSessionValidation } from 'dsh-shared-blueprint/contract'
 import { BlueprintTrialValidationError } from '../src/client/controller.ts'
 import { prepareBlueprintTrialSession } from '../src/client/trial-session.ts'
 

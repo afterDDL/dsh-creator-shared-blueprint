@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEventType } from '@deepseek-ai/dsh-session'
 
 /** npm package identity used by the durable event registry. */
-export const BLUEPRINT_SESSION_EVENT_OWNER = '@deepseek-ai/dsh-shared-blueprint'
+export const BLUEPRINT_SESSION_EVENT_OWNER = 'dsh-shared-blueprint'
 
 /** Durable event types whose payload semantics are implemented by this plugin. */
 export const BLUEPRINT_SESSION_EVENT_TYPES = [

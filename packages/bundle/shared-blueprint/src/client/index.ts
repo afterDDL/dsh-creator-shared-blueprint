@@ -5,8 +5,8 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   BlueprintApplyReceipt, BlueprintCreatorAuthoringRoute,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
-import blueprintRemote from '@deepseek-ai/dsh-shared-blueprint/remote'
+} from 'dsh-shared-blueprint/contract'
+import blueprintRemote from 'dsh-shared-blueprint/remote'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -55,13 +55,13 @@ export {
 } from './demo-adapter.ts'
 
 type RecoveredCreatorAuthoring = NonNullable<
-  import('@deepseek-ai/dsh-shared-blueprint/contract').BlueprintConversationContextResult['creatorAuthoring']
+  import('dsh-shared-blueprint/contract').BlueprintConversationContextResult['creatorAuthoring']
 >
 type RecoveredCapabilityAuthoring = NonNullable<
-  import('@deepseek-ai/dsh-shared-blueprint/contract').BlueprintConversationContextResult['capabilityAuthoring']
+  import('dsh-shared-blueprint/contract').BlueprintConversationContextResult['capabilityAuthoring']
 >
 type RecoveredCapabilityAuthoringRecord = NonNullable<
-  import('@deepseek-ai/dsh-shared-blueprint/contract').BlueprintConversationContextResult['capabilityAuthoringRecord']
+  import('dsh-shared-blueprint/contract').BlueprintConversationContextResult['capabilityAuthoringRecord']
 >
 
 type BackgroundCapabilityRecovery = BlueprintCapabilityRecoveryCandidate & {
@@ -242,7 +242,7 @@ async function startCapabilityConversation(
 
 async function startCapabilityAuthoring(
   ctx: ClientContext,
-  route: import('@deepseek-ai/dsh-shared-blueprint/contract').BlueprintCapabilityAuthoringRoute,
+  route: import('dsh-shared-blueprint/contract').BlueprintCapabilityAuthoringRoute,
   setExecutionActive: (sessionId: SessionId, active: boolean) => void,
 ): Promise<BlueprintCapabilityAuthoringStart> {
   const sourceSessionId = route.sourceSessionId as SessionId
@@ -313,7 +313,7 @@ async function startCreatorAuthoringContinuation(
   route: BlueprintCreatorAuthoringRoute,
 ): Promise<{
   sessionId: SessionId
-  authoring: NonNullable<import('@deepseek-ai/dsh-shared-blueprint/contract').BlueprintConversationContextResult['creatorAuthoring']>
+  authoring: NonNullable<import('dsh-shared-blueprint/contract').BlueprintConversationContextResult['creatorAuthoring']>
 }> {
   if (route.handoff === undefined) throw new Error('此创建请求缺少安全交接记录，请重新发起创建。')
   const sessionId = await createSessionForPreset(ctx, 'cordis', false, route.handoff.targetCreatorSessionId as SessionId)
@@ -923,11 +923,11 @@ function mountBlueprintUi(ctx: ClientContext): void {
   let contextUpdate: Promise<void> = Promise.resolve()
   const syncConversationContext = (
     intendedSessionId: string | undefined,
-    blueprint: import('@deepseek-ai/dsh-shared-blueprint/contract').Blueprint | null,
+    blueprint: import('dsh-shared-blueprint/contract').Blueprint | null,
     selectedNodeId: string | null,
     creatorDraft?: BlueprintCreatorDraft,
-    userChange?: import('@deepseek-ai/dsh-shared-blueprint/contract').BlueprintUserChangeInput,
-    directEditInput?: import('@deepseek-ai/dsh-shared-blueprint/contract').BlueprintStructuredEditInput,
+    userChange?: import('dsh-shared-blueprint/contract').BlueprintUserChangeInput,
+    directEditInput?: import('dsh-shared-blueprint/contract').BlueprintStructuredEditInput,
     isCurrent: () => boolean = () => true,
   ): Promise<void> => {
     contextUpdate = contextUpdate.catch(() => undefined).then(async () => {

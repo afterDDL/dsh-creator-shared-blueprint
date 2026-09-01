@@ -1,6 +1,6 @@
 /** Figma-derived Agent Builder presentation over real Blueprint state. */
 import { useEffect, useState, type ReactNode } from 'react'
-import type { Blueprint, BlueprintChangeProposal, BlueprintChangeSet, BlueprintNode } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { Blueprint, BlueprintChangeProposal, BlueprintChangeSet, BlueprintNode } from 'dsh-shared-blueprint/contract'
 import { blueprintProposalStatus } from './proposal-status.ts'
 import { blueprintSelection, type BlueprintCreatorDraft, type BlueprintUiState } from './controller.ts'
 import { deriveSemanticCapabilities } from './semantic-capabilities.ts'

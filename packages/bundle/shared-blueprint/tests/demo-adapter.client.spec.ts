@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Blueprint, BlueprintApplyChangeSetResult } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { Blueprint, BlueprintApplyChangeSetResult } from 'dsh-shared-blueprint/contract'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   InMemoryBlueprintDemoAdapter, type BlueprintDemoSeed,

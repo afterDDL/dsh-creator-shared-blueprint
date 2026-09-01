@@ -1,15 +1,17 @@
-# @deepseek-ai/dsh-shared-blueprint
+# dsh-shared-blueprint
 
 English | [中文](README.zh.md)
 
-The installable Interactive Blueprint bundle for DSH. One package owns the Host adapter, durable event vocabulary, generated Remote, browser client, and additive composition patch. The standard Web bundle does not mount Blueprint; installation is explicit. Inspect Mode is not included.
+The standalone Shared Blueprint Interactive Preview package for DSH. One package owns the Host adapter, durable event types, generated Remote, browser client, and additive composition patch. The standard Web bundle does not mount Blueprint; installation is explicit. Inspect Mode is not included.
+
+Version `0.1.0-beta.1` is a working Preview/Beta under active stress testing and compatibility hardening. It is a third-party package, not an official DeepSeek plugin. It currently requires the [compatible DSH checkout](../../../release/interactive-preview/COMPATIBILITY.md); untouched DSH `0.1.0-rc.7` plus this package is unsupported.
 
 ## Installation
 
 Install a prebuilt tarball into the Web profile, then start the ordinary Web app:
 
 ```sh
-dsh plugin --profile web add ./deepseek-ai-dsh-shared-blueprint-0.1.0-rc.7.tgz
+dsh plugin --profile web add ./dsh-shared-blueprint-0.1.0-beta.1.tgz
 dsh web
 ```
 

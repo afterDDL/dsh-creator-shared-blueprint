@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BlueprintConversationContextResult } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { BlueprintConversationContextResult } from 'dsh-shared-blueprint/contract'
 import { assertDirectEditEnqueued } from '../src/client/direct-edit-enqueue.ts'
 
 const input = {

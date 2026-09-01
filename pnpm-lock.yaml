@@ -340,7 +340,7 @@ importers:
       '@deepseek-ai/dsh-settings':
         specifier: workspace:^
         version: link:../../packages/settings/settings
-      '@deepseek-ai/dsh-shared-blueprint':
+      'dsh-shared-blueprint':
         specifier: workspace:^
         version: link:../../packages/bundle/shared-blueprint
       '@deepseek-ai/dsh-subagent':
@@ -608,7 +608,7 @@ importers:
       '@deepseek-ai/dsh-settings-file':
         specifier: workspace:*
         version: link:../packages/settings/settings-file
-      '@deepseek-ai/dsh-shared-blueprint':
+      'dsh-shared-blueprint':
         specifier: workspace:*
         version: link:../packages/bundle/shared-blueprint
       '@deepseek-ai/dsh-shell':

@@ -10,7 +10,7 @@ Interactive Blueprint was split between a Host package and a browser package tha
 
 ## Decision
 
-`@deepseek-ai/dsh-shared-blueprint` is one installable bundle with Host, Client, wire contract, generated Remote artifacts, and an additive `cordis.patch.yml`. The package's `dsh.client` declaration loads its browser artifact. That artifact mounts the package-owned generated Remote contribution through the generic Client Remote service before it registers Interactive Blueprint's additive Layout, Sidebar, Conversation, and Tool surfaces.
+`dsh-shared-blueprint` is one installable bundle with Host, Client, wire contract, generated Remote artifacts, and an additive `cordis.patch.yml`. The package's `dsh.client` declaration loads its browser artifact. That artifact mounts the package-owned generated Remote contribution through the generic Client Remote service before it registers Interactive Blueprint's additive Layout, Sidebar, Conversation, and Tool surfaces.
 
 The Client entry cannot inject its own Remote namespace before it creates that namespace. Its outer fiber injects only the platform services needed by `$mount`; after mounting, an explicitly injected child fiber owns every UI consumer of the new namespace. Startup joins that child, and teardown disposes it before withdrawing the Remote contribution. A non-Blueprint external-client regression exercises the same mount-then-consume ordering.
 

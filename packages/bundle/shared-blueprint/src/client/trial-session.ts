@@ -1,4 +1,4 @@
-import type { BlueprintSessionValidation } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { BlueprintSessionValidation } from 'dsh-shared-blueprint/contract'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { BlueprintTrialValidationError, type BlueprintTrialRequest } from './controller.ts'
 

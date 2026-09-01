@@ -1,4 +1,4 @@
-/** Package-owned invariant companion for `@deepseek-ai/dsh-shared-blueprint`. */
+/** Package-owned invariant companion for `dsh-shared-blueprint`. */
 
 /* jscpd:ignore-start */
 import { createHash } from 'node:crypto'

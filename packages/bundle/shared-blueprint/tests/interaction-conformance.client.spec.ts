@@ -15,7 +15,7 @@ import type {
   BlueprintProposalCancellation,
   BlueprintSessionValidation,
   BlueprintStructuredEditInput,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
+} from 'dsh-shared-blueprint/contract'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {

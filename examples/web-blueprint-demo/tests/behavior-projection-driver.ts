@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { boot } from '@deepseek-ai/dsh-app-boot'
-import type {} from '@deepseek-ai/dsh-shared-blueprint'
+import type {} from 'dsh-shared-blueprint'
 
 const root = await mkdtemp(join(tmpdir(), 'dsh-behavior-snapshot-'))
 process.env.DSH_BLUEPRINT_TEST_PRESETS = root

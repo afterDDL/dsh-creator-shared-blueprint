@@ -20,7 +20,7 @@ it('mounts Demo state inside the production DSH Web shell without a parallel pag
   const styleOwners = [...document.head.querySelectorAll('style[data-plugin]')]
     .map(style => style.getAttribute('data-plugin'))
   expect(styleOwners).toContain('@deepseek-ai/dsh-client-ui-layout')
-  expect(styleOwners).toContain('@deepseek-ai/dsh-shared-blueprint')
+  expect(styleOwners).toContain('dsh-shared-blueprint')
 
   fireEvent.click(screen.getByRole('button', { name: '试用 Agent' }))
   const dialog = await screen.findByRole('dialog', { name: '试用这个 Agent' })

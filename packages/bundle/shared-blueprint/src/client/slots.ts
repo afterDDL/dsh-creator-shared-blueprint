@@ -1,7 +1,7 @@
 /** Composed props shared by the Interactive Blueprint slot entries. */
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { BlueprintChangeSet } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { BlueprintChangeSet } from 'dsh-shared-blueprint/contract'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { ConversationDefaultDetailsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'

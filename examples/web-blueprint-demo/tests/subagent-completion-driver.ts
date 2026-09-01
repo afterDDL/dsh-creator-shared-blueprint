@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import { CallId, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-shared-blueprint'
+import type {} from 'dsh-shared-blueprint'
 
 const root = await mkdtemp(join(tmpdir(), 'dsh-subagent-snapshot-'))
 process.env.DSH_BLUEPRINT_TEST_PRESETS = root

@@ -1,5 +1,5 @@
 /** User-facing work capabilities derived from the real Blueprint projection. */
-import type { Blueprint, BlueprintNode } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { Blueprint, BlueprintNode } from 'dsh-shared-blueprint/contract'
 import { capabilityValue } from './controller.ts'
 
 /** One concise capability with Host-projected nodes retained as internal evidence. */

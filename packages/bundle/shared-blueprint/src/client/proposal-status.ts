@@ -1,7 +1,7 @@
 /** Proposal history is resolved from Host outcomes before checking present-day applicability. */
 import type {
   BlueprintApplyReceipt, BlueprintChangeSet, BlueprintProposalCancellation,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
+} from 'dsh-shared-blueprint/contract'
 import type { BlueprintUiState } from './controller.ts'
 
 /** User-visible state of one confirmed or still-pending proposal card. */

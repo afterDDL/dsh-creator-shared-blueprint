@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Blueprint, BlueprintNode } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { Blueprint, BlueprintNode } from 'dsh-shared-blueprint/contract'
 import { deriveSemanticCapabilities } from '../src/client/semantic-capabilities.ts'
 
 function node(id: string, type: BlueprintNode['type'], value: BlueprintNode['value']): BlueprintNode {

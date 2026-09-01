@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-01-out-of-tree-interactive-blueprint-bundle.md
-2026-09-01-out-of-tree-interactive-blueprint-bundle.md: dcb3546888f52d7b49ab9df74a5bd896542ef06b
-2026-09-01-out-of-tree-interactive-blueprint-bundle.zh.md: 8c2b1d0081d05a456010edd8d9edc48fea53fcb0
+2026-09-01-out-of-tree-interactive-blueprint-bundle.md: 5595ec0be3eced4142d3aa2048e0f30c24239328
+2026-09-01-out-of-tree-interactive-blueprint-bundle.zh.md: b416c411bddaf6b35fe1ef790f9fac8b2cf37d64

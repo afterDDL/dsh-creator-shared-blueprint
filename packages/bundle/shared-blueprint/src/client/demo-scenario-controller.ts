@@ -1,5 +1,5 @@
 /** Deterministic Demo orchestration kept outside the production UI components. */
-import type { BlueprintChangeSet } from '@deepseek-ai/dsh-shared-blueprint/contract'
+import type { BlueprintChangeSet } from 'dsh-shared-blueprint/contract'
 import type { ClientContext, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
   BlueprintCreatorObservation, BlueprintDemoFlowState, BlueprintTrialRequest,

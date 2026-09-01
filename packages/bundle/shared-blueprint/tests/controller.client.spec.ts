@@ -3,7 +3,7 @@ import type {
   Blueprint, BlueprintApplyChangeSetRequest, BlueprintApplyChangeSetResult, BlueprintApplyReceipt,
   BlueprintChangeProposal, BlueprintChangeSet, BlueprintSessionValidation,
   BlueprintStructuredEditInput, BlueprintUserChangeInput,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
+} from 'dsh-shared-blueprint/contract'
 import type { ConversationNode, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {

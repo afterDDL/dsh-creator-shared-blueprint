@@ -13,7 +13,7 @@ it.skipIf(process.env.DSH_EXAMPLE_MODE !== 'lib')('settles mounted Skill authori
   const require = createRequire(import.meta.url)
   const { boot } = require('../../../packages/boot/app-boot/lib/index.js') as typeof import('@deepseek-ai/dsh-app-boot')
   const { default: AgentPresets } = require('../../../packages/preset/agent-presets/lib/index.js') as typeof import('@deepseek-ai/dsh-agent-presets')
-  const { default: BlueprintAdapter } = require('../../../packages/bundle/shared-blueprint/lib/index.js') as typeof import('@deepseek-ai/dsh-shared-blueprint')
+  const { default: BlueprintAdapter } = require('../../../packages/bundle/shared-blueprint/lib/index.js') as typeof import('dsh-shared-blueprint')
   const { CallId, createToolResultMessage, createUserMessage } = require('../../../packages/llm/llm/lib/index.js') as typeof import('@deepseek-ai/dsh-llm')
   const { decodeStorageRecord, SessionId } = require('../../../packages/core/session/lib/index.js') as typeof import('@deepseek-ai/dsh-session')
   const root = await mkdtemp(join(tmpdir(), 'dsh-skill-terminal-snapshot-'))

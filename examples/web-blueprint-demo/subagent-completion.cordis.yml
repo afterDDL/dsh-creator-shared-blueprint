@@ -32,4 +32,4 @@
       - path: !!js process.env.DSH_BLUEPRINT_TEST_PRESETS
         trust: user
 - id: blueprint
-  name: '@deepseek-ai/dsh-shared-blueprint'
+  name: 'dsh-shared-blueprint'

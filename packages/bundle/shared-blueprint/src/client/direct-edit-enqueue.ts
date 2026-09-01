@@ -3,7 +3,7 @@
 import type {
   BlueprintConversationContextResult,
   BlueprintStructuredEditInput,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
+} from 'dsh-shared-blueprint/contract'
 
 /**
  * Require Host evidence that a structured Purpose edit entered its owning Session.

@@ -1,13 +1,13 @@
 {
-  "name": "@deepseek-ai/dsh-shared-blueprint",
-  "description": "Installable Interactive Blueprint Host, Client, and public contract for DeepSeek Harness",
-  "version": "0.1.0-rc.7",
+  "name": "dsh-shared-blueprint",
+  "description": "Shared interface for humans and AI to understand, discuss, and shape agents built on DeepSeek Harness",
+  "version": "0.1.0-beta.1",
   "publishConfig": {
     "access": "public"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "url": "git+https://github.com/afterDDL/dsh-creator-shared-blueprint.git",
     "directory": "packages/bundle/shared-blueprint"
   },
   "type": "module",
@@ -54,6 +54,9 @@
     "lib/typert.remote-client.d.ts"
   ],
   "dsh": {
+    "release": {
+      "family": "independent"
+    },
     "bundle": {
       "patch": "./cordis.patch.yml"
     },

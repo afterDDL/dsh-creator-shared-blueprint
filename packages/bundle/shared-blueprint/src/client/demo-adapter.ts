@@ -3,7 +3,7 @@
 import type {
   Blueprint, BlueprintApplyChangeSetRequest, BlueprintApplyChangeSetResult,
   BlueprintConversationContextRequest, BlueprintConversationContextResult, BlueprintNode,
-} from '@deepseek-ai/dsh-shared-blueprint/contract'
+} from 'dsh-shared-blueprint/contract'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   BlueprintAgentCatalog, BlueprintAgentCatalogSnapshot, BlueprintAgentOption, BlueprintRemote,
