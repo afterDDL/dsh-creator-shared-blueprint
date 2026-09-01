@@ -9,7 +9,7 @@ The Complete Build is the recommended download. It contains prebuilt DSH `0.1.0-
 ```sh
 tar -xzf shared-blueprint-interactive-preview-complete-build-0.1.0-beta.1.tgz
 cd package
-pnpm install --frozen-lockfile --config.optional=false
+pnpm install --frozen-lockfile
 pnpm start
 ```
 

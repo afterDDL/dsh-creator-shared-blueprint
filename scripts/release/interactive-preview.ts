@@ -276,7 +276,7 @@ function main(): void {
   }
   copyFileSync(join(root, 'LICENSE'), join(completeRoot, 'LICENSE'))
   copyFileSync(join(root, 'THIRD_PARTY_NOTICES.md'), join(completeRoot, 'THIRD_PARTY_NOTICES.md'))
-  runPnpm(['install', '--lockfile-only', '--ignore-scripts', '--config.optional=false'], completeRoot)
+  runPnpm(['install', '--lockfile-only', '--ignore-scripts'], completeRoot)
   if (existsSync(join(completeRoot, 'node_modules'))) rmSync(join(completeRoot, 'node_modules'), { recursive: true, force: true })
   const completeFilename = `shared-blueprint-interactive-preview-complete-build-${INTERACTIVE_PREVIEW_VERSION}.tgz`
   const completePath = join(artifacts, completeFilename)
