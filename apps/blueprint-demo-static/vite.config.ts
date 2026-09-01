@@ -48,7 +48,11 @@ export default {
     ...base.resolve,
     alias: [
       { find: '@deepseek-ai/dsh-commands/remote', replacement: resolve(generatedRoot, 'commands.js') },
-      { find: 'react-dom/client', replacement: webRequire.resolve('react-dom/client') },
+      { find: /^react\/jsx-dev-runtime$/, replacement: webRequire.resolve('react/jsx-dev-runtime') },
+      { find: /^react\/jsx-runtime$/, replacement: webRequire.resolve('react/jsx-runtime') },
+      { find: /^react$/, replacement: webRequire.resolve('react') },
+      { find: /^react-dom\/client$/, replacement: webRequire.resolve('react-dom/client') },
+      { find: /^react-dom$/, replacement: webRequire.resolve('react-dom') },
       { find: 'zod', replacement: require.resolve('zod') },
       { find: 'dsh-shared-blueprint/remote', replacement: resolve(here, 'src/remote-stub.ts') },
       {
