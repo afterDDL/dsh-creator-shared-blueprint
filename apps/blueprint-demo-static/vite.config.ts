@@ -9,6 +9,7 @@ import webConfig from '../web/vite.config.ts'
 const here = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(here, '../..')
 const require = createRequire(resolve(repositoryRoot, 'packages/bundle/shared-blueprint/package.json'))
+const webRequire = createRequire(resolve(repositoryRoot, 'apps/web/package.json'))
 const generatedRoot = process.env['DSH_BLUEPRINT_STATIC_GENERATED']
 if (generatedRoot === undefined) throw new Error('blueprint static demo: generated Remote directory is unset')
 
@@ -47,6 +48,7 @@ export default {
     ...base.resolve,
     alias: [
       { find: '@deepseek-ai/dsh-commands/remote', replacement: resolve(generatedRoot, 'commands.js') },
+      { find: 'react-dom/client', replacement: webRequire.resolve('react-dom/client') },
       { find: 'zod', replacement: require.resolve('zod') },
       { find: 'dsh-shared-blueprint/remote', replacement: resolve(here, 'src/remote-stub.ts') },
       {
