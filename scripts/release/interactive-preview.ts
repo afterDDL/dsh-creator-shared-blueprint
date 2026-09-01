@@ -285,7 +285,7 @@ function main(): void {
   const archiveList = join(work, 'complete-build.files')
   writeFileSync(archiveList, `${archiveEntries.join('\n')}\n`)
   run('tar', [
-    '--format', 'ustar', '--mtime', '1985-10-26T08:15:00Z', '-czf', completePath,
+    '--format', 'ustar', '--mtime', '1985-10-26 08:15:00 UTC', '-czf', completePath,
     '-C', completeArchiveRoot, '-T', archiveList,
   ], { cwd: root })
   if (!existsSync(completePath)) throw new Error(`Complete Build produced no ${completeFilename}`)
