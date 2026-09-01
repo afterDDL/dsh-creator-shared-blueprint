@@ -2,11 +2,13 @@
 
 English | [中文](README.zh.md)
 
+A plugin designed for Creator mode.
+
 A shared interface for humans and AI to understand, discuss, and shape agents built on DeepSeek Harness.
 
 **Interactive Preview · v0.1.0-beta.1**
 
-Shared Blueprint turns an agent into a structure that people and AI can both see, point to, discuss, and modify. The Interactive Preview supports the full authoring path from a natural-language request to a usable agent with verified Skills and Subagents.
+Shared Blueprint turns the hard-to-follow agent creation process into a structure that people and AI can both see, point to, discuss, and modify. In a structured interface, the Interactive Preview supports the full authoring path from a natural-language request to a usable agent with verified Skills and Subagents.
 
 This is a working beta under active stress testing and compatibility hardening. It is not a stable release, production-readiness claim, or official DeepSeek plugin.
 
@@ -15,7 +17,7 @@ This is a working beta under active stress testing and compatibility hardening. 
 | Entry | For | Status |
 |---|---|---|
 | Try Demo | A hosted first look | Not hosted yet; no placeholder URL is presented as a demo. |
-| [Complete Build](release/interactive-preview/INSTALL.md#complete-build) | People who want the shortest path to the product |Recommended. Bundles Shared Blueprint with a compatible DSH build containing the 7 generic extension seams not yet available upstream. |
+| [Complete Build](release/interactive-preview/INSTALL.md#complete-build) | People who want the shortest path to the product | Recommended. Bundles Shared Blueprint with a compatible DSH build containing the 7 generic extension seams not yet available upstream. |
 | [Standalone Bundle](release/interactive-preview/INSTALL.md#standalone-bundle) | DSH plugin and ecosystem developers | Fully out-of-tree with 0 private Core dependencies. Requires the compatibility seam layer until equivalent extension APIs are available in upstream DSH. |
 
 ## Run
@@ -28,11 +30,15 @@ Follow the [Standalone Bundle commands](release/interactive-preview/INSTALL.md#s
 
 ## What you can do
 
-- Create an agent from natural language.
-- Inspect its semantic Blueprint and select a node for discussion.
-- Review a Proposal before Apply changes the committed agent.
-- Add a Skill or Subagent through isolated authoring and verified publication.
-- Start Try Agent and use the resulting runtime.
+Create an Agent with natural language: Describe the task you want to accomplish, and AI will progressively organize your requirements into a visible, structured Agent Blueprint.
+
+Discuss the same Blueprint with AI: Select any part—Role, Purpose, Capabilities, Rules, or Output—and continue asking questions, clarifying, or making adjustments around that specific node.
+
+Confirm changes before they modify the Agent: AI first generates a Proposal that clearly shows what it plans to change. You confirm it before selecting Apply.
+
+Keep extending the Agent's capabilities: From the structured interface, use natural language to create a Skill or add a collaborating Agent. New capabilities appear directly in the Blueprint, so its structure and capability changes remain clear even as the Agent grows more complex.
+
+Try the Agent you just built: Select Try Agent to start a real session from the current Blueprint and confirm that the capabilities you viewed, changed, and added are active at runtime.
 
 ## Compatibility
 
