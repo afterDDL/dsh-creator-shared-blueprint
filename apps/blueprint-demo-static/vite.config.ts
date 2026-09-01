@@ -3,14 +3,12 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
 import { load } from 'js-yaml'
-import { defineConfig } from 'vite'
-import type { UserConfig } from 'vite'
 import tsconfigPaths from 'vite-tsconfig-paths'
 import webConfig from '../web/vite.config.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repositoryRoot = resolve(here, '../..')
-const require = createRequire(import.meta.url)
+const require = createRequire(resolve(repositoryRoot, 'packages/bundle/shared-blueprint/package.json'))
 const generatedRoot = process.env['DSH_BLUEPRINT_STATIC_GENERATED']
 if (generatedRoot === undefined) throw new Error('blueprint static demo: generated Remote directory is unset')
 
@@ -24,11 +22,11 @@ const bootstrapJson = patch.find(row => row.id === 'shared-blueprint')?.config?.
 if (typeof bootstrapJson !== 'string') throw new Error('blueprint static demo: demoBootstrapJson is missing')
 const seed = JSON.parse(bootstrapJson) as unknown
 
-const base = webConfig as UserConfig
+const base = webConfig
 const connectionIndex = resolve(repositoryRoot, 'packages/client/connection/src/client/index.ts').replaceAll('\\', '/')
 const staticFixture = resolve(here, 'src/fixture.ts')
 
-export default defineConfig({
+export default {
   ...base,
   root: here,
   base: process.env['DSH_BLUEPRINT_DEMO_BASE'] ?? '/dsh-creator-shared-blueprint/',
@@ -68,4 +66,4 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: false,
   },
-})
+}
